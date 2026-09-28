@@ -154,12 +154,6 @@ export interface ChunkGeometries {
   flora: THREE.BufferGeometry | null;
 }
 
-function localCoordinates(face: FaceIndex, fixed: number, a: number, b: number): [number, number, number] {
-  if (face <= 1) return [fixed, b, a];
-  if (face <= 3) return [a, fixed, b];
-  return [a, b, fixed];
-}
-
 /** Funde retangulos de valores iguais dentro de uma mascara 2D. */
 function consumeMask(
   mask: Int16Array,
@@ -204,28 +198,33 @@ export function buildChunkGeometry(chunk: Chunk, readGlobal: GlobalBlockReader):
   const flora = new GeometryBuilder();
   const gx0 = chunk.cx * CHUNK_X;
   const gz0 = chunk.cz * CHUNK_Z;
-  const plans = makePlans(Math.min(CHUNK_Y, chunk.highestBlockY + 1));
+  const plans = makePlans(Math.min(chunk.height, chunk.highestBlockY + 1));
 
   const readNeighbor = (lx: number, y: number, lz: number, dx: number, dy: number, dz: number): number => {
     const nx = lx + dx;
     const ny = y + dy;
     const nz = lz + dz;
-    if (ny < 0) return BlockId.Stone;
-    if (nx >= 0 && nx < CHUNK_X && ny < CHUNK_Y && nz >= 0 && nz < CHUNK_Z) {
+    if (ny < 0 && chunk.height === CHUNK_Y) return BlockId.Stone;
+    if (nx >= 0 && nx < CHUNK_X && ny >= 0 && ny < chunk.height && nz >= 0 && nz < CHUNK_Z) {
       return chunk.getLocal(nx, ny, nz);
     }
-    return readGlobal(gx0 + nx, ny, gz0 + nz);
+    return readGlobal(gx0 + nx, chunk.baseY + ny, gz0 + nz);
   };
 
   for (let face = 0 as FaceIndex; face < 6; face = (face + 1) as FaceIndex) {
     const plan = plans[face];
+    const opaqueMask = new Int16Array(plan.aSize * plan.bSize);
+    const waterMask = new Int16Array(plan.aSize * plan.bSize);
+    const moltenMask = new Int16Array(plan.aSize * plan.bSize);
     for (let fixed = 0; fixed < plan.axisSize; fixed++) {
-      const opaqueMask = new Int16Array(plan.aSize * plan.bSize);
-      const waterMask = new Int16Array(plan.aSize * plan.bSize);
+      opaqueMask.fill(0); waterMask.fill(0); moltenMask.fill(0);
 
       for (let b = 0; b < plan.bSize; b++) {
         for (let a = 0; a < plan.aSize; a++) {
-          const [lx, y, lz] = localCoordinates(face, fixed, a, b);
+          // No temporary coordinate array for every voxel in all six scans.
+          const lx = face <= 1 ? fixed : a;
+          const y = face <= 1 ? b : face <= 3 ? fixed : b;
+          const lz = face <= 1 ? a : face <= 3 ? b : fixed;
           const id = chunk.getLocal(lx, y, lz);
           if (id === BlockId.Air) continue;
           if (id === BlockId.Torch) {
@@ -253,6 +252,8 @@ export function buildChunkGeometry(chunk: Chunk, readGlobal: GlobalBlockReader):
 
           if (id === BlockId.Water) {
             if (neighbor === BlockId.Air) waterMask[index] = tile + 1;
+          } else if (id === BlockId.MoltenCore) {
+            if (neighbor !== id && !isOpaque(neighbor)) moltenMask[index] = tile + 1;
           } else if (!isOpaque(neighbor)) {
             opaqueMask[index] = tile + 1;
           }
@@ -261,6 +262,7 @@ export function buildChunkGeometry(chunk: Chunk, readGlobal: GlobalBlockReader):
 
       consumeMask(opaqueMask, face, fixed, plan.aSize, plan.bSize, opaque);
       consumeMask(waterMask, face, fixed, plan.aSize, plan.bSize, water);
+      consumeMask(moltenMask, face, fixed, plan.aSize, plan.bSize, torch);
     }
   }
 

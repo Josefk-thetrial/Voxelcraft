@@ -826,3 +826,75 @@ body,
 .fade-up {
   animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Skin wardrobe: independent modal, preserving the main menu/game HUD. */
+.skin-dialog { margin: auto; width: min(900px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 0; color: #edf3e8; background: #1c241d; border: 2px solid #64745b; box-shadow: 0 20px 100px #000b; }
+.skin-dialog::backdrop { background: #050b08bb; backdrop-filter: blur(6px); }
+.skin-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 26px; border-bottom: 1px solid #ffffff20; }
+.skin-eyebrow { font-size: 11px; letter-spacing: 3px; color: #b4df83; }
+.skin-header h2 { margin: 4px 0 0; font-size: 26px; font-weight: 700; }
+.skin-close { font-size: 32px; padding: 0 10px; cursor: pointer; }
+.skin-layout { display: grid; grid-template-columns: 0.9fr 1.1fr; }
+.skin-stage { text-align: center; padding: 12px 18px 20px; background: radial-gradient(ellipse at center, #40563b, #17251e); }
+.skin-preview { height: 350px; width: 100%; touch-action: none; cursor: grab; }
+.skin-preview canvas { display: block; }
+.skin-stage p, .skin-options p { color: #b5c2b1; font-size: 13px; line-height: 1.5; margin: 8px 0 14px; }
+.skin-options { padding: 22px 26px; }
+.skin-options h3, .skin-options legend { font-size: 14px; font-weight: 700; color: #d3e8c0; margin-bottom: 10px; }
+.skin-options fieldset { border: 0; padding: 0; margin-top: 20px; }
+.skin-models { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.skin-models label { padding: 10px; border: 1px solid #ffffff30; cursor: pointer; }
+.skin-models label:has(input:checked) { border-color: #a2d873; background: #a2d87316; }
+.skin-models small { display: block; font-size: 11px; color: #b5c2b1; margin: 4px 0 0 20px; }
+.skin-layers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px; }
+.skin-dialog input { accent-color: #9ed96b; margin-right: 8px; }
+.skin-dialog button:focus-visible, .skin-dialog a:focus-visible, .skin-dialog input:focus-visible { outline: 2px solid #dbffa8; outline-offset: 4px; }
+.skin-dialog .mc-menu-btn { width: 100%; height: auto; min-height: 40px; font-size: 14px; padding: 10px 14px; }
+.skin-dialog button:disabled { opacity: 0.5; cursor: wait; }
+.skin-actions { display: flex; gap: 14px; align-items: center; }
+.skin-text-btn { font-size: 12px; text-decoration: underline; color: #c5dfb2; padding: 10px 0; cursor: pointer; }
+.skin-footer { padding: 16px 26px; border-top: 1px solid #ffffff20; }
+.skin-footer p { font-size: 13px; color: #d3e8c0; min-height: 20px; margin-bottom: 12px; }
+.skin-dialog .skin-save { background: #4b7736; }
+@media (max-width: 640px) { .skin-layout { grid-template-columns: 1fr; } .skin-preview { height: 240px; } .skin-header, .skin-options, .skin-footer { padding: 16px; } }
+.skin-motion { display: block; text-align: left; font-size: 13px; color: #d3e8c0; margin: 14px 0; }
+.skin-motion select { display: block; width: 100%; padding: 10px; margin-top: 6px; border: 1px solid #6c825e; background: #182319; color: #edf3e8; }
+.skin-motion select:focus-visible { outline: 2px solid #dbffa8; outline-offset: 2px; }
+@media (min-width: 641px) { .skin-stage { position: sticky; top: 0; align-self: start; } }
+.skin-footer { position: sticky; bottom: 0; z-index: 2; background: #1c241d; }
+.graphics-setting { display: flex; flex-direction: column; gap: 6px; font-size: 13px; text-shadow: 1px 1px #000; width: min(400px, calc(100% - 24px)); margin-top: 8px; }
+.graphics-setting select { background: #222d20; color: white; border: 1px solid #899580; padding: 8px; width: 100%; }
+.underwater-tint { position: absolute; inset: 0; pointer-events: none; background: #14558226; }
+.air-meter { position: absolute; bottom: 135px; left: 50%; transform: translateX(-50%); color: #b8ecff; background: #082334d9; padding: 8px 14px; border: 1px solid #74b7d4; text-align: center; font-size: 13px; pointer-events: none; }
+.air-meter span { display: block; letter-spacing: 4px; }.air-meter small { display: block; color: #eee; font-size: 11px; }
+/* Seed configuration remains usable on small screens without covering play buttons. */
+.mc-screen { overflow-y: auto; padding-bottom: 80px; }
+.mc-logo-area { flex-shrink: 0; min-height: 170px; }
+.mc-buttons-area { flex-shrink: 0; padding: 0 12px 16px; }
+.world-seed-settings { width: 100%; max-width: 400px; background: #102018c9; border: 1px solid #ffffff30; padding: 12px; font-size: 13px; }
+.world-seed-settings label { font-weight: 700; }
+.world-seed-row { display: flex; gap: 6px; margin: 7px 0; }
+.world-seed-row input { min-width: 0; width: 100%; background: #0b120d; color: white; border: 1px solid #91a88b; padding: 9px; }
+.world-seed-row button { padding: 8px; border: 1px solid #91a88b; background: #354b2c; cursor: pointer; }
+.world-seed-settings p { color: #d0dfc7; margin: 5px 0 0; font-size: 11px; }
+.world-seed-row :focus-visible { outline: 2px solid #e3ffa8; outline-offset: 2px; }
+.menu-footer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; pointer-events: none; background: linear-gradient(transparent, #000b); height: 52px; }
+.world-seed-display { display: block; padding: 12px; margin: 18px auto 0; max-width: 390px; font-size: 12px; color: #e3f0d7; background: #102018df; border: 1px solid #91a88b55; cursor: default; }
+.world-seed-display input { display: block; width: 100%; padding: 6px; color: white; font-size: 18px; font-family: monospace; background: #0007; margin: 6px 0; text-align: center; user-select: text; }
+.world-seed-display small { color: #c8d3c3; }
+.world-load-error { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 24px; background: #142019; color: white; }
+
+/* Geological sample swatches; only artistic colors, not a temperature map. */
+.block-geology-granite { background: #aa8d80; }
+.block-geology-basalt { background: #353a40; }
+.block-geology-gabbro { background: #46483f; }
+.block-geology-gneiss { background: #8c8185; }
+.block-geology-peridotite { background: #657840; }
+.block-geology-wadsleyite { background: #99833f; }
+.block-geology-ringwoodite { background: #476578; }
+.block-geology-bridgmanite { background: #816046; }
+.block-geology-postperovskite { background: #534051; }
+.block-geology-moltencore { background: #ed7e30; }
+.block-geology-ironnickel { background: #b7a189; }
+.geology-hud { position: absolute; left: 16px; top: 66px; display: flex; flex-direction: column; background: #121917bd; border: 1px solid #ffffff30; padding: 8px 12px; color: #e7f1dd; font-size: 12px; pointer-events: none; }.geology-hud small { opacity: .75; }
+.geology-panel { color: #dce7d7; font-size: 12px; margin-top: 14px; border: 1px solid #799564; padding: 12px; }.geology-panel summary { cursor: pointer; font-weight: 700; }.geology-panel p { margin: 10px 0; line-height: 1.5; }.geology-panel table { width: 100%; border-collapse: collapse; font-size: 11px; }.geology-panel th, .geology-panel td { border-bottom: 1px solid #ffffff25; padding: 7px 3px; text-align: left; }.geology-panel small { display: block; opacity: .7; }.geology-panel input { background: #101a10; border: 1px solid #799564; color: white; padding: 8px; display: block; width: 100%; margin: 8px 0; }.geology-shortcuts { display: flex; flex-wrap: wrap; gap: 5px; }.geology-shortcuts button { border: 1px solid #ffffff40; padding: 5px; cursor: pointer; }

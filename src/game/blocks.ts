@@ -24,6 +24,9 @@ export const BlockId = {
   Sandstone: 13,
   GrassTuft: 14,
   Flower: 15,
+  Granite: 16, Basalt: 17, Gabbro: 18, Gneiss: 19, Peridotite: 20,
+  Wadsleyite: 21, Ringwoodite: 22, Bridgmanite: 23, PostPerovskite: 24,
+  MoltenCore: 25, IronNickel: 26,
 } as const;
 
 export type BlockId = (typeof BlockId)[keyof typeof BlockId];
@@ -40,6 +43,18 @@ export interface BlockDef {
 
 /** Tabela de definições indexada pelo ID do bloco. */
 export const BLOCKS: Record<number, BlockDef> = {
+  [BlockId.Granite]: { name: 'Granito', top: Tiles.Granite, side: Tiles.Granite, bottom: Tiles.Granite },
+  [BlockId.Basalt]: { name: 'Basalto', top: Tiles.Basalt, side: Tiles.Basalt, bottom: Tiles.Basalt },
+  [BlockId.Gabbro]: { name: 'Gabro', top: Tiles.Gabbro, side: Tiles.Gabbro, bottom: Tiles.Gabbro },
+  [BlockId.Gneiss]: { name: 'Gnaisse', top: Tiles.Gneiss, side: Tiles.Gneiss, bottom: Tiles.Gneiss },
+  [BlockId.Peridotite]: { name: 'Peridotito', top: Tiles.Peridotite, side: Tiles.Peridotite, bottom: Tiles.Peridotite },
+  [BlockId.Wadsleyite]: { name: 'Wadsleyita', top: Tiles.Wadsleyite, side: Tiles.Wadsleyite, bottom: Tiles.Wadsleyite },
+  [BlockId.Ringwoodite]: { name: 'Ringwoodita', top: Tiles.Ringwoodite, side: Tiles.Ringwoodite, bottom: Tiles.Ringwoodite },
+  [BlockId.Bridgmanite]: { name: 'Bridgmanita', top: Tiles.Bridgmanite, side: Tiles.Bridgmanite, bottom: Tiles.Bridgmanite },
+  [BlockId.PostPerovskite]: { name: 'Pós-perovskita', top: Tiles.PostPerovskite, side: Tiles.PostPerovskite, bottom: Tiles.PostPerovskite },
+  [BlockId.MoltenCore]: { name: 'Ferro-níquel líquido', top: Tiles.MoltenCore, side: Tiles.MoltenCore, bottom: Tiles.MoltenCore, solid: false },
+  [BlockId.IronNickel]: { name: 'Ferro-níquel sólido', top: Tiles.IronNickel, side: Tiles.IronNickel, bottom: Tiles.IronNickel },
+
   [BlockId.Grass]: { name: 'Grama', top: Tiles.GrassTop, side: Tiles.GrassSide, bottom: Tiles.Dirt },
   [BlockId.Dirt]: { name: 'Terra', top: Tiles.Dirt, side: Tiles.Dirt, bottom: Tiles.Dirt },
   [BlockId.Stone]: { name: 'Pedra', top: Tiles.Stone, side: Tiles.Stone, bottom: Tiles.Stone },
@@ -105,8 +120,12 @@ export function isReplaceable(id: number): boolean {
   return (
     id === BlockId.Air ||
     id === BlockId.Water ||
+    id === BlockId.MoltenCore ||
     id === BlockId.Torch ||
     id === BlockId.GrassTuft ||
     id === BlockId.Flower
   );
 }
+
+/** Fluids have no collision but provide drag and cannot be breathed. */
+export function isFluid(id: number): boolean { return id === BlockId.Water || id === BlockId.MoltenCore; }

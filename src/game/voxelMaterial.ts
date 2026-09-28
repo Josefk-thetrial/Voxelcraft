@@ -60,12 +60,13 @@ export function createFloraMaterial(): THREE.MeshLambertMaterial {
 export function createVoxelMaterial(water = false, doubleSided = false): THREE.MeshLambertMaterial {
   const material = new THREE.MeshLambertMaterial({
     map: getAtlasTexture(),
-    side: doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+    side: (doubleSided || water) ? THREE.DoubleSide : THREE.FrontSide,
     transparent: water,
     opacity: water ? 0.72 : 1,
     depthWrite: true,
   });
 
+  material.forceSinglePass = water;
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(

@@ -1,3 +1,4 @@
+import GeologyPanel from './GeologyPanel';
 // ============================================================
 // GameView.tsx — HUD e telas da Fase 5 (final)
 // ------------------------------------------------------------
@@ -25,6 +26,8 @@ import {
   X,
   Eraser,
 } from 'lucide-react';
+import { clearSave } from '../game/save';
+import type { WorldSettings } from '../game/worldSettings';
 import { Game, type HudState } from '../game/Game';
 import { ALL_CREATIVE_ITEM_IDS, RECIPES, getItemMeta } from '../game/inventory';
 
@@ -32,10 +35,11 @@ interface GameViewProps {
   onExit(saved: boolean): void;
   autoload: boolean;
   gameMode: 'survival' | 'creative';
+  world?: WorldSettings;
 }
 
 const PHASE5_CHECKLIST = [
-  '4 biomas: planície, floresta, deserto e neve',
+  'Biomas terrestres, praias e oceanos nos mundos novos',
   'Cavernas com túneis e cavernas amplas (ruído 3D)',
   'Árvores que cruzam bordas de chunk + grama alta e flores',
   'Porco passivo (vagueia/foge) e zumbi hostil (persegue à noite)',
@@ -45,7 +49,8 @@ const PHASE5_CHECKLIST = [
 
 
 
-export default function GameView({ onExit, autoload, gameMode }: GameViewProps) {
+export default function GameView({ onExit, autoload, gameMode, world }: GameViewProps) {
+  const [loadError, setLoadError] = useState<string | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<Game | null>(null);
   const [hud, setHud] = useState<HudState | null>(null);
@@ -56,7 +61,9 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
   const toastTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    const game = new Game(hostRef.current!, {
+    let game: Game;
+    try {
+      game = new Game(hostRef.current!, {
       onHud: setHud,
       onLockChange: (isLocked) => {
         setLocked(isLocked);
@@ -68,14 +75,20 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
         if (toastTimer.current) window.clearTimeout(toastTimer.current);
         toastTimer.current = window.setTimeout(() => setSaveToast(null), 2600);
       },
-    }, { autoload, gameMode } as any);
+    }, { autoload, gameMode, world });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Não foi possível iniciar o mundo.');
+      return;
+    }
+    // Do not erase the previous world when initialization fails.
+    if (!autoload) clearSave();
     gameRef.current = game;
     return () => {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
       game.dispose();
       gameRef.current = null;
     };
-  }, [autoload, gameMode]);
+  }, [autoload, gameMode, world]);
 
   const lock = () => gameRef.current?.lockPointer();
   const isCreative = hud?.gameMode === 'creative';
@@ -88,6 +101,17 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
     return slot >= 0 ? hud?.hotbarCounts[slot] ?? 0 : 0;
   };
 
+  if (loadError) return <div className="world-load-error" role="alert">
+    <h2>Não foi possível abrir o mundo</h2><p>{loadError}</p>
+    <button className="mc-menu-btn" onClick={() => onExit(false)}>Voltar ao menu</button>
+  </div>;
+
+  const seedDetails = hud && <label className="world-seed-display" onClick={e => e.stopPropagation()}>
+    Seed do mundo · gerador v{hud.generatorVersion}
+    <input aria-label="Seed do mundo" readOnly value={String(hud.seed)} title={hud.seedText} onFocus={e => e.target.select()} />
+    <small>Selecione para copiar. A mesma seed e versão recriam o terreno.</small>
+  </label>;
+
   return (
     <div className="relative h-full w-full select-none overflow-hidden bg-black">
       <div ref={hostRef} className="absolute inset-0" />
@@ -96,6 +120,11 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
         <>
           <div className="vignette" />
           <div className="crosshair" />
+          {hud.underwater && <div className="underwater-tint" aria-hidden="true" />}
+          {!isCreative && (hud.underwater || hud.air < 15) && <div className="air-meter" role="meter" aria-label="Fôlego" aria-valuemin={0} aria-valuemax={15} aria-valuenow={Math.ceil(hud.air)}>
+            Fôlego: {Math.ceil(hud.air)} s <span>{'●'.repeat(Math.ceil(hud.air / 1.5))}</span>
+            <small>Espaço: subir · Shift: mergulhar</small>
+          </div>}
 
           {/* Painel debug */}
           <div className="absolute left-4 top-4 font-semibold">
@@ -106,7 +135,7 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
               <span className="h-3 w-px bg-white/25" />
               <span className="flex items-center gap-1.5"><TreePine className="h-3.5 w-3.5 text-lime-300" />{hud.biome}</span>
               <span className="h-3 w-px bg-white/25" />
-              <span className="flex items-center gap-1.5 tabular-nums"><Layers className="h-3.5 w-3.5 text-lime-300" />{hud.chunks} chunks{hud.pending > 0 && <span className="text-amber-300">+{hud.pending}</span>}</span>
+              <span className="flex items-center gap-1.5 tabular-nums"><Layers className="h-3.5 w-3.5 text-lime-300" />{hud.chunks} {hud.generatorVersion === 3 ? 'seções' : 'chunks'}{hud.pending > 0 && <span className="text-amber-300">+{hud.pending}</span>}</span>
               <span className="h-3 w-px bg-white/25" />
               <span className="flex items-center gap-1.5 text-lime-300">
                 {hud.mode === 'fly' ? 'VOANDO' : hud.crouching ? 'AGACHADO' : hud.grounded ? 'NO CHÃO' : 'NO AR'}
@@ -115,6 +144,10 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
             </div>
           </div>
 
+          {hud.geology && <div className="geology-hud">
+            <strong>{Math.floor(hud.geology.depth).toLocaleString('pt-BR')} m de profundidade</strong>
+            <span>{hud.geology.layer}</span><small>{hud.geology.mechanical}</small>
+          </div>}
           {/* Relógio + mobs */}
           <div className="absolute right-4 top-4 flex items-center gap-3 rounded-md border border-white/15 bg-black/55 px-3 py-2 text-xs font-bold text-white/85 backdrop-blur-sm">
             {hud.dayPhase === 'Noite' ? <MoonStar className="h-4 w-4 text-blue-200" /> : <Sun className="h-4 w-4 text-amber-300" />}
@@ -301,17 +334,20 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
           className="absolute inset-0 z-20 grid place-items-center bg-black/50 cursor-pointer"
           onClick={lock}
         >
-          <p className="font-pixel text-sm text-white/80 animate-pulse">
-            Clique para jogar
-          </p>
+          <div className="text-center">
+            <p className="font-pixel text-sm text-white/80 animate-pulse">Clique para jogar</p>
+            {seedDetails}
+          </div>
         </div>
       )}
 
       {/* Pausa */}
       {showPause && (
         <div className="absolute inset-0 z-20 grid place-items-center bg-black/70 p-6 backdrop-blur-sm">
-          <div className="fade-up w-full max-w-lg border border-white/15 bg-[#0d120a]/95 p-8 shadow-2xl">
+          <div className="fade-up max-h-[90dvh] overflow-y-auto w-full max-w-2xl border border-white/15 bg-[#0d120a]/95 p-8 shadow-2xl">
             <h2 className="flex items-center justify-center gap-3 text-center font-pixel text-sm text-white"><Pause className="h-4 w-4 text-lime-300" />JOGO PAUSADO</h2>
+            {seedDetails}
+            {hud?.geology && <GeologyPanel crust={hud.geology.crust} creative={isCreative} onTravel={d => gameRef.current?.travelToDepth(d) ?? false} />}
             <div className="mt-6 border border-lime-300/20 bg-lime-400/5 p-4">
               <p className="mb-3 flex items-center gap-2 font-pixel text-[8px] tracking-wider text-lime-300"><Check className="h-4 w-4" /> FASE 5 CONCLUÍDA — PROJETO FINALIZADO</p>
               <ul className="space-y-2">

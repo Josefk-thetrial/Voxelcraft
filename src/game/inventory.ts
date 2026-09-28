@@ -22,6 +22,17 @@ export const ITEM_LIBRARY: ItemMeta[] = [
   { id: BlockId.Water,         name: 'Água',             css: 'block-water' },
   { id: BlockId.GrassTuft,     name: 'Grama alta',       css: 'block-grass-tuft' },
   { id: BlockId.Flower,        name: 'Flor',             css: 'block-flower' },
+  { id: BlockId.Granite, name: 'Granito', css: 'block-geology-granite' },
+  { id: BlockId.Basalt, name: 'Basalto', css: 'block-geology-basalt' },
+  { id: BlockId.Gabbro, name: 'Gabro', css: 'block-geology-gabbro' },
+  { id: BlockId.Gneiss, name: 'Gnaisse', css: 'block-geology-gneiss' },
+  { id: BlockId.Peridotite, name: 'Peridotito', css: 'block-geology-peridotite' },
+  { id: BlockId.Wadsleyite, name: 'Wadsleyita', css: 'block-geology-wadsleyite' },
+  { id: BlockId.Ringwoodite, name: 'Ringwoodita', css: 'block-geology-ringwoodite' },
+  { id: BlockId.Bridgmanite, name: 'Bridgmanita', css: 'block-geology-bridgmanite' },
+  { id: BlockId.PostPerovskite, name: 'Pós-perovskita', css: 'block-geology-postperovskite' },
+  { id: BlockId.MoltenCore, name: 'Ferro-níquel líquido', css: 'block-geology-moltencore' },
+  { id: BlockId.IronNickel, name: 'Ferro-níquel sólido', css: 'block-geology-ironnickel' },
   { id: BlockId.Bedrock,       name: 'Rocha-mãe',        css: 'block-bedrock' },
 ];
 

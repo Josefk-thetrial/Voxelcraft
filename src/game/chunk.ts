@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { BlockId, isSolid } from './blocks';
 import { Noise2D, smoothstep } from './noise';
 import { Noise3D } from './noise3d';
+import type { GeneratorVersion } from './worldSettings';
 import { Biome, BiomeClassifier } from './biomes';
 
 export const CHUNK_X = 16;
@@ -38,7 +39,7 @@ export function hash2(x: number, z: number): number {
 export class Chunk {
   readonly cx: number;
   readonly cz: number;
-  readonly data = new Uint8Array(CHUNK_X * CHUNK_Y * CHUNK_Z);
+  readonly data: Uint8Array;
   highestBlockY = 0;
 
   opaqueMesh: THREE.Mesh | null = null;
@@ -49,7 +50,8 @@ export class Chunk {
   dirty = true;
   meshed = false;
 
-  constructor(cx: number, cz: number) {
+  constructor(cx: number, cz: number, readonly baseY = 0, readonly height = CHUNK_Y) {
+    this.data = new Uint8Array(CHUNK_X * height * CHUNK_Z);
     this.cx = cx;
     this.cz = cz;
   }
@@ -97,20 +99,57 @@ export class TerrainGenerator {
   private caves: Noise3D;
   private biomes: BiomeClassifier;
   private seed: number;
+  private continents: Noise2D;
 
-  constructor(seed: number) {
+  constructor(seed: number, readonly version: GeneratorVersion = 1) {
     this.noise = new Noise2D(seed);
+    this.continents = new Noise2D(seed ^ 0x6a09e667);
     this.caves = new Noise3D(seed + 77);
     this.biomes = new BiomeClassifier(seed);
     this.seed = seed;
   }
 
   biomeAt(x: number, z: number): Biome {
+    return this.surfaceBiomeAt(x, z, this.version >= 2 ? this.heightAt(x, z) : 0);
+  }
+
+  private surfaceBiomeAt(x: number, z: number, height: number): Biome {
+    if (this.version >= 2) {
+      if (height <= SEA_LEVEL - 10) return Biome.DeepOcean;
+      if (height < SEA_LEVEL) return Biome.Ocean;
+      if (height <= SEA_LEVEL + 2) return Biome.Beach;
+    }
     return this.biomes.biomeAt(x, z);
   }
 
-  /** Altura da superfície sólida (igual à Fase 2, provada). */
+  /** Ocean basins vary on a much larger scale than hills and mountain ridges. */
   heightAt(x: number, z: number): number {
+    if (this.version >= 2) return this.oceanHeightAt(x, z);
+    return this.legacyHeightAt(x, z);
+  }
+
+  continentalnessAt(x: number, z: number): number {
+    return this.continents.fbm(x * 0.00135 + 12.345, z * 0.00135 - 65.432, 3)
+      + this.noise.fbm(x * 0.005 + 41.2, z * 0.005 - 17.6, 2) * 0.08;
+  }
+
+  private oceanHeightAt(x: number, z: number): number {
+    // Fractional offsets avoid all seeds sharing an integer-lattice origin.
+    const continentalness = this.continentalnessAt(x, z);
+    const land = smoothstep(-0.12, 0.18, continentalness);
+    const depth = 19 * (1 - smoothstep(-0.38, -0.08, continentalness));
+    const detail = this.noise.fbm(x * 0.045, z * 0.045, 2) * 1.6;
+    const seabed = SEA_LEVEL - 4 - depth + detail * 0.6;
+    const hills = this.noise.fbm(x * 0.0075 + 100, z * 0.0075 - 100, 4);
+    const mountainMask = smoothstep(0.46, 0.74, this.noise.fbm(x * 0.0021 - 300, z * 0.0021 + 300, 2) * 0.5 + 0.5);
+    const ridge = this.noise.ridged(x * 0.017 + 55, z * 0.017 - 55, 4);
+    const inland = SEA_LEVEL + 8 + hills * 7 + mountainMask * Math.pow(Math.max(0, ridge), 1.7) * 38 + detail;
+    const h = seabed + (inland - seabed) * land;
+    return Math.max(4, Math.min(CHUNK_Y - 16, Math.floor(h)));
+  }
+
+  /** Keep this algorithm unchanged: existing save diffs depend on it. */
+  private legacyHeightAt(x: number, z: number): number {
     const continent = this.noise.fbm(x * 0.0075 + 100, z * 0.0075 - 100, 4);
     const maskRaw = this.noise.fbm(x * 0.0021 - 300, z * 0.0021 + 300, 2) * 0.5 + 0.5;
     const mountainMask = smoothstep(0.46, 0.74, maskRaw);
@@ -118,6 +157,26 @@ export class TerrainGenerator {
     const detail = this.noise.fbm(x * 0.045, z * 0.045, 2) * 1.6;
     const h = 24 + continent * 7 + mountainMask * Math.pow(ridge, 1.7) * 38 + detail;
     return Math.max(3, Math.min(CHUNK_Y - 16, Math.floor(h)));
+  }
+
+  /** Bounded deterministic search, sampling heights only (no chunk allocation). */
+  findSpawn(): { x: number; z: number } {
+    const safe = (x: number, z: number) => {
+      const h = this.heightAt(x, z);
+      return h >= SEA_LEVEL + 3 && h < CHUNK_Y - 4
+        && Math.abs(h - this.heightAt(x + 1, z)) <= 2
+        && Math.abs(h - this.heightAt(x, z + 1)) <= 2;
+    };
+    if (safe(0, 0)) return { x: 0.5, z: 0.5 };
+    for (let r = 1; r <= 64; r++) {
+      for (let t = -r; t <= r; t++) {
+        for (const [cx, cz] of [[t, -r], [t, r], [-r, t], [r, t]]) {
+          const x = cx * 32, z = cz * 32;
+          if (safe(x, z)) return { x: x + 0.5, z: z + 0.5 };
+        }
+      }
+    }
+    throw new Error('Não foi encontrada terra firme próxima. Tente outra seed.');
   }
 
   /** Regra de caverna: túneis (2 vermes) + cavernas amplas profundas. */
@@ -206,7 +265,7 @@ export class TerrainGenerator {
         const gx = gx0 + lx;
         const gz = gz0 + lz;
         const h = this.heightAt(gx, gz);
-        const biome = this.biomeAt(gx, gz);
+        const biome = this.surfaceBiomeAt(gx, gz, h);
 
         // --- Bloco base por camadas, conforme o bioma ---
         for (let y = 0; y <= h; y++) {
@@ -216,11 +275,14 @@ export class TerrainGenerator {
           } else if (y <= 2 && hash2(gx * 3 + y, gz * 5 - y) < (3 - y) * 0.25) {
             id = BlockId.Bedrock;
           } else if (y === h) {
-            if (h >= SNOW_LINE || biome === Biome.Snow) id = BlockId.Snow;
+            if (biome === Biome.DeepOcean) {
+              id = this.noise.perlin(gx * 0.03 + 8.3, gz * 0.03 - 6.7) > 0.25 ? BlockId.Stone : BlockId.Sand;
+            } else if (biome === Biome.Ocean || biome === Biome.Beach) id = BlockId.Sand;
+            else if (h >= SNOW_LINE || biome === Biome.Snow) id = BlockId.Snow;
             else if (biome === Biome.Desert || h <= SEA_LEVEL + 1) id = BlockId.Sand;
             else id = BlockId.Grass;
           } else if (y >= h - 3) {
-            id = biome === Biome.Desert || h <= SEA_LEVEL + 1 ? BlockId.Sand : BlockId.Dirt;
+            id = biome === Biome.Desert || biome === Biome.Beach || h <= SEA_LEVEL + 1 ? BlockId.Sand : BlockId.Dirt;
           } else if (biome === Biome.Desert && y >= h - 7) {
             id = BlockId.Sandstone;
           } else {

@@ -1,3 +1,4 @@
+import type { GeneratorVersion } from './worldSettings';
 // ============================================================
 // save.ts — Salvar/carregar mundo no localStorage
 // ------------------------------------------------------------
@@ -12,10 +13,13 @@ const SAVE_KEY = 'voxelcraft-save-v1';
 export interface SaveData {
   version: number;
   seed: number;
+  seedText?: string;
+  generatorVersion?: GeneratorVersion;
+  spawn?: { x: number; y: number; z: number };
   savedAt: number;
   player: { x: number; y: number; z: number; yaw: number; pitch: number; mode: string };
   gameMode: 'survival' | 'creative';
-  stats: { health: number; hunger: number };
+  stats: { health: number; hunger: number; air?: number };
   timeOfDay: number; // fração do ciclo [0,1)
   selectedSlot: number;
   hotbarIds?: number[];
@@ -36,7 +40,12 @@ export function readSave(): SaveData | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as SaveData;
-    if (data.version !== 1 || !Array.isArray(data.edits)) return null;
+    if (data.version !== 1 || !Array.isArray(data.edits) || !Number.isSafeInteger(data.seed)) return null;
+    if (data.generatorVersion !== undefined && data.generatorVersion !== 1 && data.generatorVersion !== 2 && data.generatorVersion !== 3) return null;
+    if (!data.player || ![data.player.x, data.player.y, data.player.z, data.player.yaw, data.player.pitch].every(Number.isFinite)) return null;
+    if (!data.stats || !Number.isFinite(data.stats.health) || !Number.isFinite(data.stats.hunger) || !Array.isArray(data.inventory)) return null;
+    if (data.seedText !== undefined && typeof data.seedText !== 'string') return null;
+    if (data.spawn && ![data.spawn.x, data.spawn.y, data.spawn.z].every(Number.isFinite)) return null;
     return data;
   } catch {
     return null;
