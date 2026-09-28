@@ -1,3 +1,4 @@
+import { GRAPHICS, getGraphicsQuality } from './graphics';
 import * as THREE from 'three';
 import { ChunkManager } from './ChunkManager';
 import { SEA_LEVEL } from './chunk';
@@ -40,6 +41,8 @@ export interface HudState {
   hotbarCounts: number[];
   health: number;
   hunger: number;
+  air: number;
+  underwater: boolean;
   clock: string;
   dayPhase: DayPhase;
   grounded: boolean;
@@ -77,12 +80,14 @@ export class Game {
   private container: HTMLDivElement;
   private cb: GameCallbacks;
 
+  private graphics = GRAPHICS[getGraphicsQuality()];
   private renderer!: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private player = new Player();
   private chunks!: ChunkManager;
   private dayNight!: DayNightCycle;
   private torchLighting!: TorchLighting;
+  private underwater = false;
   private survival = new SurvivalStats();
   private inventory = new Inventory();
   private mobs!: MobManager;
@@ -151,10 +156,10 @@ export class Game {
   }
 
   private initRenderer(): void {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: this.graphics.antialias, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.graphics.pixelRatio));
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this.graphics.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.domElement.style.display = 'block';
     this.container.appendChild(this.renderer.domElement);
@@ -166,12 +171,12 @@ export class Game {
   private initScene(): void {
     const fog = new THREE.Fog(0xc8e0ef, 34, 96);
     this.scene.fog = fog;
-    this.dayNight = new DayNightCycle(this.scene, fog);
+    this.dayNight = new DayNightCycle(this.scene, fog, this.graphics.shadowSize);
     this.torchLighting = new TorchLighting(this.scene);
   }
 
   private initWorld(): void {
-    this.chunks = new ChunkManager(this.scene, WORLD_SEED);
+    this.chunks = new ChunkManager(this.scene, WORLD_SEED, this.graphics.radius);
     this.chunks.forceSpawnArea();
     const groundY = this.chunks.supportHeightAt(0.5, 0.5);
     this.player.position.set(0.5, groundY > 0 ? groundY : SEA_LEVEL + 6, 0.5);
@@ -407,7 +412,7 @@ export class Game {
         mode: this.player.mode,
       },
       gameMode: this.gameMode,
-      stats: { health: this.survival.health, hunger: this.survival.hunger },
+      stats: { health: this.survival.health, hunger: this.survival.hunger, air: this.survival.air },
       timeOfDay: this.dayNight.timeOfDay,
       selectedSlot: this.selectedSlot,
       hotbarIds: this.hotbarIds,
@@ -431,6 +436,7 @@ export class Game {
     this.gameMode = data.gameMode || 'survival';
     this.survival.health = data.stats.health;
     this.survival.hunger = data.stats.hunger;
+    this.survival.air = Number.isFinite(data.stats.air) ? Math.max(0, Math.min(15, data.stats.air!)) : 15;
     this.inventory.restore(data.inventory);
     this.dayNight.setTime(data.timeOfDay);
     this.selectedSlot = Math.max(0, Math.min(HOTBAR_SIZE - 1, data.selectedSlot));
@@ -616,7 +622,9 @@ export class Game {
 
   private tick = (time: number): void => {
     if (this.disposed) return;
-    const dt = this.lastTime < 0 ? 0.016 : Math.min((time - this.lastTime) / 1000, 0.05);
+    if (document.hidden) { this.lastTime = -1; return; }
+    const realDt = this.lastTime < 0 ? 0.016 : Math.max(0, (time - this.lastTime) / 1000);
+    const dt = Math.min(realDt, 0.1);
     this.lastTime = time;
 
     const locked = document.pointerLockElement === this.renderer.domElement;
@@ -624,6 +632,7 @@ export class Game {
     const simDt = active ? dt : 0;
 
     const frame = this.player.update(simDt, this.chunks);
+    this.underwater = frame.underwater;
 
     if (this.player.position.y < -40 && !this.survival.dead && this.gameMode === 'survival') {
       this.survival.health = 0;
@@ -632,6 +641,7 @@ export class Game {
     if (this.gameMode === 'creative') {
       this.survival.health = 20;
       this.survival.hunger = 20;
+      this.survival.air = 15;
     } else if (!this.survival.dead) {
       this.survival.update(simDt, frame);
     }
@@ -729,7 +739,7 @@ export class Game {
     }
 
     this.fpsFrames++;
-    this.fpsElapsed += dt;
+    this.fpsElapsed += realDt;
     if (this.fpsElapsed >= 0.5) {
       this.currentFps = Math.round(this.fpsFrames / this.fpsElapsed);
       this.fpsFrames = 0;
@@ -747,8 +757,9 @@ export class Game {
 
     if (this.viewMode !== 'first') {
       const cam = this.thirdPersonCam;
-      cam.aspect = this.player.camera.aspect;
-      cam.updateProjectionMatrix();
+      if (cam.aspect !== this.player.camera.aspect) {
+        cam.aspect = this.player.camera.aspect; cam.updateProjectionMatrix();
+      }
 
       const dist = 4;
       const yaw = this.player.yaw;
@@ -777,6 +788,11 @@ export class Game {
       renderCam = cam;
     }
 
+    const fog = this.scene.fog as THREE.Fog;
+    const submerged = this.chunks.getBlock(Math.floor(renderCam.position.x), Math.floor(renderCam.position.y), Math.floor(renderCam.position.z)) === BlockId.Water;
+    if (submerged) fog.color.set(0x17516e);
+    fog.near = submerged ? 0.5 : 34;
+    fog.far = submerged ? 16 : this.graphics.radius * 16 + 16;
     this.renderer.render(this.scene, renderCam);
   };
 
@@ -798,6 +814,8 @@ export class Game {
       hotbarCounts: this.inventory.hotbarCounts(this.hotbarIds),
       health: this.survival.health,
       hunger: this.survival.hunger,
+      air: this.survival.air,
+      underwater: this.underwater,
       clock: this.dayNight.clock,
       dayPhase: this.dayNight.phase,
       grounded: this.player.grounded,

@@ -22,11 +22,11 @@ import { createVoxelMaterial, createFloraMaterial } from './voxelMaterial';
 export interface WorldReader {
   getBlock(x: number, y: number, z: number): number;
   supportHeightAt(x: number, z: number): number;
+  isLoadedAt?(x: number, z: number): boolean;
 }
 
-const RENDER_DISTANCE = 5; // chunks em raio Chebyshev ao redor do jogador
-const GEN_BUDGET = 8; // gerações de dados por frame
-const MESH_BUDGET = 3; // construções de malha por frame
+// Soft CPU budget: a single generation/mesh is atomic and may exceed it.
+const WORK_BUDGET_MS = 5;
 
 /** Offsets (dx, dz) pré-ordenados por distância — prioridade ao centro. */
 function makeOffsets(radius: number): [number, number][] {
@@ -37,10 +37,13 @@ function makeOffsets(radius: number): [number, number][] {
   list.sort((a, b) => Math.max(Math.abs(a[0]), Math.abs(a[1])) - Math.max(Math.abs(b[0]), Math.abs(b[1])));
   return list;
 }
-const MESH_OFFSETS = makeOffsets(RENDER_DISTANCE); // malhas: anel R
-const DATA_OFFSETS = makeOffsets(RENDER_DISTANCE + 1); // dados: anel R+1
 
 export class ChunkManager implements WorldReader {
+  private readonly meshOffsets: [number, number][];
+  private readonly dataOffsets: [number, number][];
+  private settled = false;
+  private lastCX = NaN;
+  private lastCZ = NaN;
   private chunks = new Map<number, Chunk>();
   /** Edicoes sobrevivem ao descarregamento e a regeneracao do chunk. */
   private edits = new Map<number, Map<number, number>>();
@@ -61,7 +64,9 @@ export class ChunkManager implements WorldReader {
   /** Nº de chunks dentro do raio ainda aguardando malha (HUD). */
   pendingMeshCount = 0;
 
-  constructor(scene: THREE.Scene, seed: number) {
+  constructor(scene: THREE.Scene, seed: number, private readonly radius = 4) {
+    this.meshOffsets = makeOffsets(radius);
+    this.dataOffsets = makeOffsets(radius + 1);
     this.scene = scene;
     this.generator = new TerrainGenerator(seed);
     this.torchMaterial.emissive.set(0xff8a24);
@@ -71,6 +76,10 @@ export class ChunkManager implements WorldReader {
   // ----------------------------------------------------------
   // Leitura global de blocos (usada por mesher e jogador)
   // ----------------------------------------------------------
+  isLoadedAt(x: number, z: number): boolean {
+    return this.chunks.has(chunkKey(Math.floor(x / CHUNK_X), Math.floor(z / CHUNK_Z)));
+  }
+
   getBlock(x: number, y: number, z: number): number {
     if (y < 0) return BlockId.Bedrock;
     if (y >= CHUNK_Y) return BlockId.Air;
@@ -111,6 +120,7 @@ export class ChunkManager implements WorldReader {
     }
     chunkEdits.set(localIndex, id);
     chunk.dirty = true;
+    this.settled = false;
 
     const torchKey = `${x},${y},${z}`;
     if (previousId === BlockId.Torch) this.torches.delete(torchKey);
@@ -176,47 +186,37 @@ export class ChunkManager implements WorldReader {
     const pcx = Math.floor(playerX / CHUNK_X);
     const pcz = Math.floor(playerZ / CHUNK_Z);
 
-    // 1) GERAÇÃO DE DADOS (anel R+1), mais perto primeiro
-    let genBudget = GEN_BUDGET;
-    for (const [dx, dz] of DATA_OFFSETS) {
-      if (genBudget <= 0) break;
-      const cx = pcx + dx;
-      const cz = pcz + dz;
-      if (!this.chunks.has(chunkKey(cx, cz))) {
-        this.createChunk(cx, cz);
-        genBudget--;
+    const moved = pcx !== this.lastCX || pcz !== this.lastCZ;
+    if (this.settled && !moved) return;
+    this.lastCX = pcx; this.lastCZ = pcz;
+    const deadline = performance.now() + WORK_BUDGET_MS;
+    let generated = false;
+    // Generate at most one chunk, not eight expensive noise volumes at once.
+    for (const [dx, dz] of this.dataOffsets) {
+      if (!this.chunks.has(chunkKey(pcx + dx, pcz + dz))) {
+        this.createChunk(pcx + dx, pcz + dz); generated = true; break;
       }
     }
-
-    // 2) CONSTRUÇÃO DE MALHAS (anel R), mais perto primeiro
-    let meshBudget = MESH_BUDGET;
     let pending = 0;
-    for (const [dx, dz] of MESH_OFFSETS) {
-      const cx = pcx + dx;
-      const cz = pcz + dz;
-      const chunk = this.chunks.get(chunkKey(cx, cz));
-      if (!chunk) {
-        pending++;
-        continue;
-      }
-      if (chunk.meshed && !chunk.dirty) continue;
-      if (!this.neighborsLoaded(cx, cz)) {
-        pending++; // aguardando vizinhos p/ bordas corretas
-        continue;
-      }
-      if (meshBudget > 0) {
-        this.meshChunk(chunk);
-        meshBudget--;
-      } else {
-        pending++;
-      }
+    let meshed = false;
+    for (const [dx, dz] of this.meshOffsets) {
+      const chunk = this.chunks.get(chunkKey(pcx + dx, pcz + dz));
+      if (chunk?.meshed && !chunk.dirty) continue;
+      if (chunk && !meshed && performance.now() < deadline && this.neighborsLoaded(chunk.cx, chunk.cz)) {
+        this.meshChunk(chunk); meshed = true;
+      } else { pending++; }
     }
     this.pendingMeshCount = pending;
-
-    // 3) DESCARREGAMENTO de chunks fora do anel de dados (R+1)
-    for (const [key, chunk] of this.chunks) {
-      const dist = Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz));
-      if (dist > RENDER_DISTANCE + 1) this.unloadChunk(key, chunk);
+    this.settled = !generated && pending === 0;
+    if (moved) {
+      for (const [key, chunk] of this.chunks) {
+        const dist = Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz));
+        if (dist > this.radius + 1) this.unloadChunk(key, chunk);
+        // Data halo chunks must not keep rendering when they leave view range.
+        for (const mesh of [chunk.opaqueMesh, chunk.waterMesh, chunk.torchMesh, chunk.floraMesh]) {
+          if (mesh) mesh.visible = dist <= this.radius;
+        }
+      }
     }
   }
 
@@ -259,7 +259,7 @@ export class ChunkManager implements WorldReader {
 
   private markDirty(cx: number, cz: number): void {
     const chunk = this.chunks.get(chunkKey(cx, cz));
-    if (chunk) chunk.dirty = true;
+    if (chunk) { chunk.dirty = true; this.settled = false; }
   }
 
   /** (Re)constrói as malhas do chunk, trocando as antigas na cena. */
@@ -423,6 +423,7 @@ export class ChunkManager implements WorldReader {
         const prev = chunk.getLocal(lx, y, lz);
         chunk.setLocal(lx, y, lz, id);
         chunk.dirty = true;
+        this.settled = false;
         // Atualiza o registro de tochas (luz dinâmica usa esse mapa)
         const torchKey = `${x},${y},${z}`;
         if (prev === BlockId.Torch) this.torches.delete(torchKey);

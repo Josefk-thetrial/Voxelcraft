@@ -18,7 +18,7 @@ export class DayNightCycle {
   private stars: THREE.Points;
   private fog: THREE.Fog;
 
-  constructor(scene: THREE.Scene, fog: THREE.Fog) {
+  constructor(scene: THREE.Scene, fog: THREE.Fog, shadowSize = 1024) {
     this.fog = fog;
     this.sky = this.createSky();
     this.stars = this.createStars();
@@ -26,7 +26,7 @@ export class DayNightCycle {
 
     this.sun = new THREE.DirectionalLight(0xfff0d0, 1.6);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(shadowSize, shadowSize);
     this.sun.shadow.camera.left = -42;
     this.sun.shadow.camera.right = 42;
     this.sun.shadow.camera.top = 42;
@@ -168,6 +168,7 @@ export class DayNightCycle {
   }
 
   dispose(): void {
+    this.sun.shadow.dispose();
     this.sky.geometry.dispose();
     this.sky.material.dispose();
     this.stars.geometry.dispose();

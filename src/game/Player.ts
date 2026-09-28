@@ -13,6 +13,7 @@ export interface PlayerFrameState {
   landedFallDistance: number;
   grounded: boolean;
   inWater: boolean;
+  underwater: boolean;
 }
 
 const EYE_HEIGHT = 1.62;
@@ -25,7 +26,8 @@ const SPRINT_MULT = 1.65;
 const FLY_SPEED = 11;
 const FLY_SPRINT_MULT = 2.2;
 const GRAVITY = 25;
-const WATER_GRAVITY = 7;
+const WATER_SINK_SPEED = -1.4;
+const PHYSICS_STEP = 1 / 120;
 const JUMP_SPEED = 8.2;
 const SMOOTH_WALK = 14;
 const SMOOTH_FLY = 9;
@@ -51,6 +53,8 @@ export class Player {
   private velocity = new THREE.Vector3();
   private jumpQueued = false;
   private fallDistance = 0;
+  private accumulator = 0;
+  private eyeHeight = EYE_HEIGHT;
 
   constructor() {
     this.camera.rotation.order = 'YXZ';
@@ -74,6 +78,8 @@ export class Player {
 
   respawn(x: number, y: number, z: number): void {
     this.position.set(x, y, z);
+    this.accumulator = 0;
+    this.jumpQueued = false;
     this.velocity.set(0, 0, 0);
     this.fallDistance = 0;
     this.grounded = false;
@@ -123,6 +129,7 @@ export class Player {
     for (let y = minY; y <= maxY; y++) {
       for (let z = minZ; z <= maxZ; z++) {
         for (let x = minX; x <= maxX; x++) {
+          if (world.isLoadedAt && !world.isLoadedAt(x, z)) return true;
           if (isSolid(world.getBlock(x, y, z))) return true;
         }
       }
@@ -133,21 +140,27 @@ export class Player {
   /** Move um eixo e encontra por busca binaria o ponto exato antes da colisao. */
   private moveAxis(axis: 'x' | 'y' | 'z', amount: number, world: WorldReader): boolean {
     if (Math.abs(amount) < 1e-8) return false;
-    const start = this.position[axis];
-    this.position[axis] = start + amount;
-    if (!this.collidesAt(this.position, world)) return false;
-
-    let safe = start;
-    let blocked = start + amount;
-    for (let i = 0; i < 12; i++) {
-      const middle = (safe + blocked) * 0.5;
-      this.position[axis] = middle;
-      if (this.collidesAt(this.position, world)) blocked = middle;
-      else safe = middle;
+    // Sweep in small segments: endpoint-only collision can pass through a
+    // one-block floor/wall during a long frame, fast flight or knockback.
+    const segments = Math.ceil(Math.abs(amount) / 0.25);
+    const delta = amount / segments;
+    for (let step = 0; step < segments; step++) {
+      const start = this.position[axis];
+      this.position[axis] = start + delta;
+      if (!this.collidesAt(this.position, world)) continue;
+      let safe = start;
+      let blocked = start + delta;
+      for (let i = 0; i < 10; i++) {
+        const middle = (safe + blocked) * 0.5;
+        this.position[axis] = middle;
+        if (this.collidesAt(this.position, world)) blocked = middle;
+        else safe = middle;
+      }
+      this.position[axis] = safe;
+      this.velocity[axis] = 0;
+      return true;
     }
-    this.position[axis] = safe;
-    this.velocity[axis] = 0;
-    return true;
+    return false;
   }
 
   private isInWater(world: WorldReader): boolean {
@@ -160,7 +173,31 @@ export class Player {
   }
 
   update(dt: number, world: WorldReader): PlayerFrameState {
-    const previous = this.position.clone();
+    const previousX = this.position.x, previousZ = this.position.z;
+    let landedFallDistance = 0;
+    let sprinting = false;
+    this.accumulator += clamp(dt, 0, 0.1);
+    // Bounded fixed steps make gravity/jump height independent of render FPS.
+    while (dt > 0 && this.accumulator + 1e-10 >= PHYSICS_STEP) {
+      const frame = this.step(PHYSICS_STEP, world);
+      landedFallDistance += frame.landedFallDistance;
+      sprinting = frame.sprinting;
+      this.accumulator = Math.max(0, this.accumulator - PHYSICS_STEP);
+    }
+    const targetEye = this.crouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
+    this.eyeHeight += (targetEye - this.eyeHeight) * (1 - Math.exp(-18 * Math.min(dt, 0.1)));
+    this.camera.position.set(this.position.x, this.position.y + this.eyeHeight, this.position.z);
+    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    return {
+      distanceMoved: this.mode === 'walk' ? Math.hypot(this.position.x - previousX, this.position.z - previousZ) : 0,
+      sprinting, crouching: this.crouching, landedFallDistance, grounded: this.grounded,
+      inWater: this.isInWater(world),
+      underwater: world.getBlock(Math.floor(this.camera.position.x), Math.floor(this.camera.position.y), Math.floor(this.camera.position.z)) === BlockId.Water,
+    };
+  }
+
+  private step(dt: number, world: WorldReader): { sprinting: boolean; landedFallDistance: number } {
+    const previousY = this.position.y;
     const k = this.keys;
     const fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
     const str = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
@@ -176,11 +213,11 @@ export class Player {
 
     const shift = k.has('ShiftLeft') || k.has('ShiftRight');
     const ctrl = k.has('ControlLeft') || k.has('ControlRight');
-    const crouching = this.mode === 'walk' && shift;
+    const inWater = this.isInWater(world);
+    const crouching = this.mode === 'walk' && shift && !inWater;
     this.crouching = crouching;
     const sprinting = this.mode === 'walk' && ctrl && inputLength > 0 && !crouching;
     let landedFallDistance = 0;
-    const inWater = this.isInWater(world);
 
     if (this.mode === 'fly') {
       const boost = ctrl ? FLY_SPRINT_MULT : 1;
@@ -205,15 +242,20 @@ export class Player {
       this.velocity.x += (dx * speed - this.velocity.x) * smooth;
       this.velocity.z += (dz * speed - this.velocity.z) * smooth;
 
-      if (this.jumpQueued && (this.grounded || inWater)) {
-        this.velocity.y = inWater ? 5.2 : JUMP_SPEED;
+      if (this.jumpQueued && this.grounded && !inWater) {
+        this.velocity.y = JUMP_SPEED;
         this.grounded = false;
       }
       this.jumpQueued = false;
 
-      this.velocity.y -= (inWater ? WATER_GRAVITY : GRAVITY) * dt;
-      this.velocity.y = Math.max(this.velocity.y, -50);
-      if (inWater) this.velocity.y *= Math.exp(-1.8 * dt);
+      if (inWater) {
+        // Held controls, not key-repeat jumps: Space ascends, Shift dives.
+        const target = k.has('Space') ? 3.2 : shift ? -3 : WATER_SINK_SPEED;
+        this.velocity.y += (target - this.velocity.y) * (1 - Math.exp(-5 * dt));
+        this.fallDistance = 0;
+      } else {
+        this.velocity.y = Math.max(this.velocity.y - GRAVITY * dt, -50);
+      }
 
       this.moveAxis('x', this.velocity.x * dt, world);
       this.moveAxis('z', this.velocity.z * dt, world);
@@ -223,8 +265,10 @@ export class Player {
       const hitVertical = this.moveAxis('y', verticalSpeed * dt, world);
       this.grounded = hitVertical && falling;
 
-      if (falling && !inWater) {
-        this.fallDistance += Math.max(0, previous.y - this.position.y);
+      const touchingWater = inWater || this.isInWater(world);
+      if (touchingWater) this.fallDistance = 0;
+      if (falling && !touchingWater) {
+        this.fallDistance += Math.max(0, previousY - this.position.y);
       }
       if (this.grounded) {
         landedFallDistance = this.fallDistance;
@@ -234,19 +278,6 @@ export class Player {
       }
     }
 
-    const horizontalDistance = Math.hypot(this.position.x - previous.x, this.position.z - previous.z);
-
-    const eyeHeight = this.crouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
-    this.camera.position.set(this.position.x, this.position.y + eyeHeight, this.position.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0);
-
-    return {
-      distanceMoved: this.mode === 'walk' ? horizontalDistance : 0,
-      sprinting,
-      crouching: this.crouching,
-      landedFallDistance,
-      grounded: this.grounded,
-      inWater,
-    };
+    return { sprinting, landedFallDistance };
   }
 }

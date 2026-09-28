@@ -15,7 +15,7 @@ export interface SaveData {
   savedAt: number;
   player: { x: number; y: number; z: number; yaw: number; pitch: number; mode: string };
   gameMode: 'survival' | 'creative';
-  stats: { health: number; hunger: number };
+  stats: { health: number; hunger: number; air?: number };
   timeOfDay: number; // fração do ciclo [0,1)
   selectedSlot: number;
   hotbarIds?: number[];

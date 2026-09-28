@@ -862,3 +862,8 @@ body,
 .skin-motion select:focus-visible { outline: 2px solid #dbffa8; outline-offset: 2px; }
 @media (min-width: 641px) { .skin-stage { position: sticky; top: 0; align-self: start; } }
 .skin-footer { position: sticky; bottom: 0; z-index: 2; background: #1c241d; }
+.graphics-setting { display: flex; flex-direction: column; gap: 6px; font-size: 13px; text-shadow: 1px 1px #000; width: min(400px, calc(100% - 24px)); margin-top: 8px; }
+.graphics-setting select { background: #222d20; color: white; border: 1px solid #899580; padding: 8px; width: 100%; }
+.underwater-tint { position: absolute; inset: 0; pointer-events: none; background: #14558226; }
+.air-meter { position: absolute; bottom: 135px; left: 50%; transform: translateX(-50%); color: #b8ecff; background: #082334d9; padding: 8px 14px; border: 1px solid #74b7d4; text-align: center; font-size: 13px; pointer-events: none; }
+.air-meter span { display: block; letter-spacing: 4px; }.air-meter small { display: block; color: #eee; font-size: 11px; }

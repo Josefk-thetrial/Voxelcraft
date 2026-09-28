@@ -154,12 +154,6 @@ export interface ChunkGeometries {
   flora: THREE.BufferGeometry | null;
 }
 
-function localCoordinates(face: FaceIndex, fixed: number, a: number, b: number): [number, number, number] {
-  if (face <= 1) return [fixed, b, a];
-  if (face <= 3) return [a, fixed, b];
-  return [a, b, fixed];
-}
-
 /** Funde retangulos de valores iguais dentro de uma mascara 2D. */
 function consumeMask(
   mask: Int16Array,
@@ -219,13 +213,17 @@ export function buildChunkGeometry(chunk: Chunk, readGlobal: GlobalBlockReader):
 
   for (let face = 0 as FaceIndex; face < 6; face = (face + 1) as FaceIndex) {
     const plan = plans[face];
+    const opaqueMask = new Int16Array(plan.aSize * plan.bSize);
+    const waterMask = new Int16Array(plan.aSize * plan.bSize);
     for (let fixed = 0; fixed < plan.axisSize; fixed++) {
-      const opaqueMask = new Int16Array(plan.aSize * plan.bSize);
-      const waterMask = new Int16Array(plan.aSize * plan.bSize);
+      opaqueMask.fill(0); waterMask.fill(0);
 
       for (let b = 0; b < plan.bSize; b++) {
         for (let a = 0; a < plan.aSize; a++) {
-          const [lx, y, lz] = localCoordinates(face, fixed, a, b);
+          // No temporary coordinate array for every voxel in all six scans.
+          const lx = face <= 1 ? fixed : a;
+          const y = face <= 1 ? b : face <= 3 ? fixed : b;
+          const lz = face <= 1 ? a : face <= 3 ? b : fixed;
           const id = chunk.getLocal(lx, y, lz);
           if (id === BlockId.Air) continue;
           if (id === BlockId.Torch) {

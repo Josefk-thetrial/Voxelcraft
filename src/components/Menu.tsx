@@ -1,3 +1,4 @@
+import { getGraphicsQuality, saveGraphicsQuality, type GraphicsQuality } from '../game/graphics';
 import { useState, useEffect } from 'react';
 import { hasSave } from '../game/save';
 import SkinWardrobe from './SkinWardrobe';
@@ -37,6 +38,7 @@ const SPLASHES = [
 ];
 
 export default function Menu({ onPlay }: MenuProps) {
+  const [quality, setQuality] = useState(getGraphicsQuality);
   const saved = hasSave();
   const [splash, setSplash] = useState('');
   const [wardrobeOpen, setWardrobeOpen] = useState(false);
@@ -77,6 +79,17 @@ export default function Menu({ onPlay }: MenuProps) {
             </button>
           )}
           <button onClick={() => setWardrobeOpen(true)} className="mc-menu-btn">Skins — Personalizar personagem</button>
+          <label className="graphics-setting">Qualidade gráfica
+            <select value={quality} onChange={e => {
+              const value = e.target.value as GraphicsQuality;
+              if (saveGraphicsQuality(value)) setQuality(value);
+              else setSplash('Não foi possível salvar a qualidade gráfica.');
+            }}>
+              <option value="low">Leve — menos sombras e alcance</option>
+              <option value="balanced">Equilibrada — recomendada</option>
+              <option value="high">Alta — visual completo</option>
+            </select>
+          </label>
         </div>
 
         {/* RODAPÉ */}

@@ -4,12 +4,23 @@ import type { PlayerFrameState } from './Player';
 export class SurvivalStats {
   health = 20;
   hunger = 20;
+  air = 15;
+  private drowningTimer = 0;
 
   private exhaustion = 0;
   private regenTimer = 0;
   private starvationTimer = 0;
 
   update(dt: number, frame: PlayerFrameState): void {
+    if (frame.underwater) {
+      const exhaustedTime = Math.max(0, dt - this.air);
+      this.air = Math.max(0, this.air - dt);
+      this.drowningTimer += exhaustedTime;
+      while (this.drowningTimer >= 1) { this.drowningTimer -= 1; this.damage(2); }
+    } else {
+      this.air = Math.min(15, this.air + dt * 5);
+      this.drowningTimer = 0;
+    }
     // Correr gasta seis vezes mais energia que caminhar.
     this.exhaustion += frame.distanceMoved * (frame.sprinting ? 0.12 : 0.02);
     this.exhaustion += dt * 0.012;
@@ -24,7 +35,7 @@ export class SurvivalStats {
     }
 
     // Fome alta regenera lentamente; fome zerada causa dano.
-    if (this.hunger >= 18 && this.health < 20) {
+    if (this.hunger >= 18 && this.health < 20 && !frame.underwater) {
       this.regenTimer += dt;
       if (this.regenTimer >= 4) {
         this.regenTimer = 0;
@@ -61,6 +72,8 @@ export class SurvivalStats {
   reset(): void {
     this.health = 20;
     this.hunger = 20;
+    this.air = 15;
+    this.drowningTimer = 0;
     this.exhaustion = 0;
     this.regenTimer = 0;
     this.starvationTimer = 0;

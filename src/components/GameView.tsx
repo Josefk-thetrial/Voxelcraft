@@ -96,6 +96,11 @@ export default function GameView({ onExit, autoload, gameMode }: GameViewProps) 
         <>
           <div className="vignette" />
           <div className="crosshair" />
+          {hud.underwater && <div className="underwater-tint" aria-hidden="true" />}
+          {!isCreative && (hud.underwater || hud.air < 15) && <div className="air-meter" role="meter" aria-label="Fôlego" aria-valuemin={0} aria-valuemax={15} aria-valuenow={Math.ceil(hud.air)}>
+            Fôlego: {Math.ceil(hud.air)} s <span>{'●'.repeat(Math.ceil(hud.air / 1.5))}</span>
+            <small>Espaço: subir · Shift: mergulhar</small>
+          </div>}
 
           {/* Painel debug */}
           <div className="absolute left-4 top-4 font-semibold">
