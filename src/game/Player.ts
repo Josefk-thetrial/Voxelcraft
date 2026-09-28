@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockId, isSolid } from './blocks';
+import { BlockId, isSolid, isFluid } from './blocks';
 import type { WorldReader } from './ChunkManager';
 import { CHUNK_Y } from './chunk';
 
@@ -129,7 +129,7 @@ export class Player {
     for (let y = minY; y <= maxY; y++) {
       for (let z = minZ; z <= maxZ; z++) {
         for (let x = minX; x <= maxX; x++) {
-          if (world.isLoadedAt && !world.isLoadedAt(x, z)) return true;
+          if (world.isLoadedAt && !world.isLoadedAt(x, z, y)) return true;
           if (isSolid(world.getBlock(x, y, z))) return true;
         }
       }
@@ -172,6 +172,12 @@ export class Player {
     );
   }
 
+  private isInMoltenCore(world: WorldReader): boolean {
+    const x = Math.floor(this.position.x), z = Math.floor(this.position.z);
+    return world.getBlock(x, Math.floor(this.position.y + .2), z) === BlockId.MoltenCore
+      || world.getBlock(x, Math.floor(this.position.y + 1.2), z) === BlockId.MoltenCore;
+  }
+
   update(dt: number, world: WorldReader): PlayerFrameState {
     const previousX = this.position.x, previousZ = this.position.z;
     let landedFallDistance = 0;
@@ -192,7 +198,7 @@ export class Player {
       distanceMoved: this.mode === 'walk' ? Math.hypot(this.position.x - previousX, this.position.z - previousZ) : 0,
       sprinting, crouching: this.crouching, landedFallDistance, grounded: this.grounded,
       inWater: this.isInWater(world),
-      underwater: world.getBlock(Math.floor(this.camera.position.x), Math.floor(this.camera.position.y), Math.floor(this.camera.position.z)) === BlockId.Water,
+      underwater: isFluid(world.getBlock(Math.floor(this.camera.position.x), Math.floor(this.camera.position.y), Math.floor(this.camera.position.z))),
     };
   }
 
@@ -213,7 +219,7 @@ export class Player {
 
     const shift = k.has('ShiftLeft') || k.has('ShiftRight');
     const ctrl = k.has('ControlLeft') || k.has('ControlRight');
-    const inWater = this.isInWater(world);
+    const inWater = this.isInWater(world) || this.isInMoltenCore(world);
     const crouching = this.mode === 'walk' && shift && !inWater;
     this.crouching = crouching;
     const sprinting = this.mode === 'walk' && ctrl && inputLength > 0 && !crouching;
@@ -233,7 +239,7 @@ export class Player {
       this.moveAxis('y', this.velocity.y * dt, world);
       this.moveAxis('z', this.velocity.z * dt, world);
 
-      this.position.y = clamp(this.position.y, 1, CHUNK_Y + 46);
+      this.position.y = clamp(this.position.y, world.minY ?? 1, CHUNK_Y + 46);
       this.grounded = false;
       this.jumpQueued = false;
     } else {
@@ -265,7 +271,7 @@ export class Player {
       const hitVertical = this.moveAxis('y', verticalSpeed * dt, world);
       this.grounded = hitVertical && falling;
 
-      const touchingWater = inWater || this.isInWater(world);
+      const touchingWater = inWater || this.isInWater(world) || this.isInMoltenCore(world);
       if (touchingWater) this.fallDistance = 0;
       if (falling && !touchingWater) {
         this.fallDistance += Math.max(0, previousY - this.position.y);

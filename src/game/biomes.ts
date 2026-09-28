@@ -13,6 +13,9 @@ export enum Biome {
   Forest = 1,
   Desert = 2,
   Snow = 3,
+  Ocean = 4,
+  DeepOcean = 5,
+  Beach = 6,
 }
 
 export const BIOME_NAMES: Record<Biome, string> = {
@@ -20,6 +23,9 @@ export const BIOME_NAMES: Record<Biome, string> = {
   [Biome.Forest]: 'Floresta',
   [Biome.Desert]: 'Deserto',
   [Biome.Snow]: 'Neve',
+  [Biome.Ocean]: 'Oceano',
+  [Biome.DeepOcean]: 'Oceano profundo',
+  [Biome.Beach]: 'Praia',
 };
 
 export class BiomeClassifier {

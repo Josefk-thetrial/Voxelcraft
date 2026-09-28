@@ -1,3 +1,5 @@
+import { DeepWorld } from './DeepWorld';
+import { BEDROCK_TOP_Y, depthAt, layerAt, mechanicalLayerAt, type CrustProfile } from './geology';
 // ============================================================
 // ChunkManager.ts — Carregamento/descarregamento dinâmico
 // ------------------------------------------------------------
@@ -13,6 +15,7 @@
 // Quando um chunk novo aparece, seus vizinhos são marcados
 // como "dirty" e têm a malha refeita com as bordas corretas.
 // ============================================================
+import type { GeneratorVersion } from './worldSettings';
 import * as THREE from 'three';
 import { Chunk, chunkKey, CHUNK_X, CHUNK_Y, CHUNK_Z, TerrainGenerator, SEA_LEVEL } from './chunk';
 import { buildChunkGeometry } from './mesher';
@@ -21,8 +24,9 @@ import { createVoxelMaterial, createFloraMaterial } from './voxelMaterial';
 
 export interface WorldReader {
   getBlock(x: number, y: number, z: number): number;
-  supportHeightAt(x: number, z: number): number;
-  isLoadedAt?(x: number, z: number): boolean;
+  supportHeightAt(x: number, z: number, nearY?: number): number;
+  readonly minY?: number;
+  isLoadedAt?(x: number, z: number, y?: number): boolean;
 }
 
 // Soft CPU budget: a single generation/mesh is atomic and may exceed it.
@@ -44,6 +48,7 @@ export class ChunkManager implements WorldReader {
   private settled = false;
   private lastCX = NaN;
   private lastCZ = NaN;
+  private deep: DeepWorld | null = null;
   private chunks = new Map<number, Chunk>();
   /** Edicoes sobrevivem ao descarregamento e a regeneracao do chunk. */
   private edits = new Map<number, Map<number, number>>();
@@ -64,11 +69,12 @@ export class ChunkManager implements WorldReader {
   /** Nº de chunks dentro do raio ainda aguardando malha (HUD). */
   pendingMeshCount = 0;
 
-  constructor(scene: THREE.Scene, seed: number, private readonly radius = 4) {
+  constructor(scene: THREE.Scene, seed: number, private readonly radius = 4, generatorVersion: GeneratorVersion = 1) {
     this.meshOffsets = makeOffsets(radius);
     this.dataOffsets = makeOffsets(radius + 1);
     this.scene = scene;
-    this.generator = new TerrainGenerator(seed);
+    this.generator = new TerrainGenerator(seed, generatorVersion);
+    if (generatorVersion === 3) this.deep = new DeepWorld(scene, seed, radius, { opaque: this.opaqueMaterial, water: this.waterMaterial, torch: this.torchMaterial, flora: this.floraMaterial });
     this.torchMaterial.emissive.set(0xff8a24);
     this.torchMaterial.emissiveIntensity = 1.25;
   }
@@ -76,11 +82,15 @@ export class ChunkManager implements WorldReader {
   // ----------------------------------------------------------
   // Leitura global de blocos (usada por mesher e jogador)
   // ----------------------------------------------------------
-  isLoadedAt(x: number, z: number): boolean {
+  get minY(): number { return this.deep ? BEDROCK_TOP_Y : 1; }
+
+  isLoadedAt(x: number, z: number, y?: number): boolean {
+    if (this.deep) return this.deep.isLoadedAt(x, z, y);
     return this.chunks.has(chunkKey(Math.floor(x / CHUNK_X), Math.floor(z / CHUNK_Z)));
   }
 
   getBlock(x: number, y: number, z: number): number {
+    if (this.deep) return this.deep.getBlock(x, y, z);
     if (y < 0) return BlockId.Bedrock;
     if (y >= CHUNK_Y) return BlockId.Air;
     const cx = Math.floor(x / CHUNK_X);
@@ -98,6 +108,7 @@ export class ChunkManager implements WorldReader {
     x = Math.floor(x);
     y = Math.floor(y);
     z = Math.floor(z);
+    if (this.deep) return this.deep.setBlock(x, y, z, id);
     if (y < 0 || y >= CHUNK_Y) return false;
 
     const cx = Math.floor(x / CHUNK_X);
@@ -137,6 +148,7 @@ export class ChunkManager implements WorldReader {
 
   /** Retorna somente as tochas mais proximas; o pool de luzes e limitado. */
   getNearbyTorches(position: THREE.Vector3, radius: number, limit: number): THREE.Vector3[] {
+    if (this.deep) return this.deep.nearbyTorches(position, radius, limit);
     const radiusSq = radius * radius;
     const candidates: { position: THREE.Vector3; distance: number }[] = [];
     for (const torch of this.torches.values()) {
@@ -148,7 +160,9 @@ export class ChunkManager implements WorldReader {
   }
 
   /** Altura do topo sólido (ignora água) na coluna; −1 se sem chunk. */
-  supportHeightAt(x: number, z: number): number {
+  supportHeightAt(x: number, z: number, nearY?: number): number {
+    if (this.deep) return this.deep.supportHeightAt(x, z, nearY);
+    x = Math.floor(x); z = Math.floor(z);
     const cx = Math.floor(x / CHUNK_X);
     const cz = Math.floor(z / CHUNK_Z);
     const chunk = this.chunks.get(chunkKey(cx, cz));
@@ -165,24 +179,44 @@ export class ChunkManager implements WorldReader {
   // Área inicial: gera 3×3 ao redor do spawn DE IMEDIATO
   // (bordas são refeitas automaticamente quando o anel maior gerar)
   // ----------------------------------------------------------
-  forceSpawnArea(): void {
+  forceSpawnArea(x = 0.5, z = 0.5, y = 32): void {
+    if (this.deep) { this.deep.forceSpawnArea(x, z, y); return; }
+    const cx = Math.floor(x / CHUNK_X), cz = Math.floor(z / CHUNK_Z);
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const key = chunkKey(dx, dz);
-        if (!this.chunks.has(key)) this.createChunk(dx, dz);
+        const key = chunkKey(cx + dx, cz + dz);
+        if (!this.chunks.has(key)) this.createChunk(cx + dx, cz + dz);
       }
     }
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        this.meshChunk(this.chunks.get(chunkKey(dx, dz))!);
+        this.meshChunk(this.chunks.get(chunkKey(cx + dx, cz + dz))!);
       }
     }
+  }
+
+  findSpawn(): { x: number; z: number } { return this.generator.findSpawn(); }
+
+  /** Search the loaded spawn area for ground, not a tree canopy or water. */
+  safeSpawnNear(x: number, z: number): THREE.Vector3 {
+    for (const [dx, dz] of makeOffsets(6)) {
+      const px = Math.floor(x) + dx, pz = Math.floor(z) + dz;
+      const y = this.supportHeightAt(px, pz);
+      const floor = this.getBlock(px, y - 1, pz);
+      if (y > SEA_LEVEL + 1 && floor !== BlockId.Leaves && floor !== BlockId.Log
+        && !isSolid(this.getBlock(px, y, pz)) && !isSolid(this.getBlock(px, y + 1, pz))) {
+        return new THREE.Vector3(px + 0.5, y, pz + 0.5);
+      }
+    }
+    // Dense forest fallback is above the canopy, never inside a trunk.
+    return new THREE.Vector3(x, Math.max(SEA_LEVEL + 2, this.supportHeightAt(x, z)), z);
   }
 
   // ----------------------------------------------------------
   // Atualização principal — chamada a cada frame
   // ----------------------------------------------------------
-  update(playerX: number, playerZ: number): void {
+  update(playerX: number, playerZ: number, playerY = 32): void {
+    if (this.deep) { this.deep.update(playerX, playerZ, playerY); this.pendingMeshCount = this.deep.pending; return; }
     const pcx = Math.floor(playerX / CHUNK_X);
     const pcz = Math.floor(playerZ / CHUNK_Z);
 
@@ -359,10 +393,12 @@ export class ChunkManager implements WorldReader {
   // Estatísticas para o HUD
   // ----------------------------------------------------------
   loadedCount(): number {
+    if (this.deep) return this.deep.loadedCount();
     return this.chunks.size;
   }
 
   meshedCount(): number {
+    if (this.deep) return this.deep.meshedCount();
     let n = 0;
     for (const c of this.chunks.values()) if (c.meshed) n++;
     return n;
@@ -370,6 +406,7 @@ export class ChunkManager implements WorldReader {
 
   /** Libera tudo ao sair do jogo. */
   dispose(): void {
+    this.deep?.dispose();
     this.unloadAll();
     this.opaqueMaterial.dispose();
     this.waterMaterial.dispose();
@@ -383,6 +420,7 @@ export class ChunkManager implements WorldReader {
 
   /** Exporta todas as edições como [x, y, z, id]. */
   serializeEdits(): number[][] {
+    if (this.deep) return this.deep.serializeEdits();
     const out: number[][] = [];
     for (const [key, chunkEdits] of this.edits) {
       const cx = Math.floor(key / 65536) - 32768;
@@ -403,6 +441,7 @@ export class ChunkManager implements WorldReader {
    * e, se o chunk já estiver carregado, atualiza e remalha.
    */
   applyEdits(entries: number[][]): void {
+    if (this.deep) { for (const [x, y, z, id] of entries) this.deep.setBlock(x, y, z, id); return; }
     for (const [x, y, z, id] of entries) {
       const cx = Math.floor(x / CHUNK_X);
       const cz = Math.floor(z / CHUNK_Z);
@@ -439,6 +478,15 @@ export class ChunkManager implements WorldReader {
         this.torches.set(`${x},${y},${z}`, new THREE.Vector3(x + 0.5, y + 0.72, z + 0.5));
       }
     }
+  }
+
+  geologicalInfo(x: number, y: number, z: number): { depth: number; crust: CrustProfile; layer: string; mechanical: string } | null {
+    if (!this.deep) return null;
+    const crust = this.deep.crustAt(x, z), depth = depthAt(y);
+    return { depth, crust, layer: layerAt(depth, crust).name, mechanical: mechanicalLayerAt(depth, crust) };
+  }
+  allocatedVoxelBytes(): number {
+    return this.deep ? this.deep.allocatedVoxelBytes() : [...this.chunks.values()].reduce((sum, chunk) => sum + chunk.data.byteLength, 0);
   }
 
   /** Bioma na coluna global (exibido no HUD). */

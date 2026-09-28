@@ -1,10 +1,11 @@
 import { getGraphicsQuality, saveGraphicsQuality, type GraphicsQuality } from '../game/graphics';
 import { useState, useEffect } from 'react';
-import { hasSave } from '../game/save';
+import { hasSave, readSave } from '../game/save';
+import { randomSeed, seedFromText } from '../game/worldSettings';
 import SkinWardrobe from './SkinWardrobe';
 
 interface MenuProps {
-  onPlay(loadExisting: boolean, mode: 'survival' | 'creative'): void;
+  onPlay(loadExisting: boolean, mode: 'survival' | 'creative', seedText?: string): void;
 }
 
 const SPLASHES = [
@@ -39,7 +40,9 @@ const SPLASHES = [
 
 export default function Menu({ onPlay }: MenuProps) {
   const [quality, setQuality] = useState(getGraphicsQuality);
+  const [seedText, setSeedText] = useState('');
   const saved = hasSave();
+  const [save] = useState(readSave);
   const [splash, setSplash] = useState('');
   const [wardrobeOpen, setWardrobeOpen] = useState(false);
 
@@ -67,10 +70,19 @@ export default function Menu({ onPlay }: MenuProps) {
 
         {/* BOTÕES — centro, 50% */}
         <div className="mc-buttons-area">
-          <button onClick={() => onPlay(false, 'survival')} className="mc-menu-btn">
+          <div className="world-seed-settings">
+            <label htmlFor="world-seed">Seed do novo mundo</label>
+            <div className="world-seed-row">
+              <input id="world-seed" value={seedText} maxLength={128} spellCheck={false} autoComplete="off" placeholder="Vazio = aleatória · número ou texto" onChange={e => setSeedText(e.target.value)} aria-describedby="seed-help" />
+              <button type="button" onClick={() => setSeedText(String(randomSeed()))} title="Gerar uma seed aleatória">Sortear</button>
+            </div>
+            <p id="seed-help">{seedText.trim() ? `Seed numérica: ${seedFromText(seedText)} · Gerador v3 · Terra profunda` : 'Em branco, uma seed aleatória é sorteada ao criar.'}</p>
+            {save && <p>Continuar usa a seed salva: <strong>{save.seed}</strong> · v{save.generatorVersion ?? 1}</p>}
+          </div>
+          <button onClick={() => onPlay(false, 'survival', seedText)} className="mc-menu-btn">
             Singleplayer — Survival
           </button>
-          <button onClick={() => onPlay(false, 'creative')} className="mc-menu-btn">
+          <button onClick={() => onPlay(false, 'creative', seedText)} className="mc-menu-btn">
             Singleplayer — Creative
           </button>
           {saved && (
@@ -92,7 +104,8 @@ export default function Menu({ onPlay }: MenuProps) {
           </label>
         </div>
 
-        {/* RODAPÉ */}
+      </div>
+      <div className="menu-footer">
         <p className="mc-footer-left">VoxelCraft 1.0.0</p>
         <p className="mc-footer-right">Not affiliated with Mojang AB.<br />Built with Three.js &amp; React</p>
       </div>

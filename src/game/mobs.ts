@@ -298,10 +298,11 @@ export class MobManager {
     // --------- atualiza todos e remove mortos/distantes ---------
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const mob = this.mobs[i];
-      const alive = mob.update(dt, player, chunks, hurtPlayer);
       const dx = mob.pos.x - player.x;
       const dz = mob.pos.z - player.z;
-      const far = dx * dx + dz * dz > DESPAWN_DIST * DESPAWN_DIST;
+      const dy = mob.pos.y - player.y;
+      const far = dx * dx + dy * dy + dz * dz > DESPAWN_DIST * DESPAWN_DIST;
+      const alive = !far && mob.update(dt, player, chunks, hurtPlayer);
       const burnZombie = mob.kind === MobKind.Zombie && !isNight; // dia queima zumbis
       if (!alive || far || burnZombie) {
         this.scene.remove(mob.group);
@@ -311,6 +312,7 @@ export class MobManager {
     }
 
     // --------- spawn orgânico (0,5–1,5 s entre tentativas) ---------
+    if (chunks.minY < 0 && player.y < -32) return;
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0 || this.mobs.length >= MAX_MOBS) return;
     this.spawnTimer = 0.5 + this.seedRnd();

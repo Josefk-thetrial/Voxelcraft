@@ -32,6 +32,17 @@ export const Tiles = {
   Sandstone: 16,
   GrassTuft: 17,
   Flower: 18,
+  Granite: 19,
+  Basalt: 20,
+  Gabbro: 21,
+  Gneiss: 22,
+  Peridotite: 23,
+  Wadsleyite: 24,
+  Ringwoodite: 25,
+  Bridgmanite: 26,
+  PostPerovskite: 27,
+  MoltenCore: 28,
+  IronNickel: 29,
 } as const;
 
 /** PRNG determinístico (mulberry32) — mesma seed ⇒ mesma sequência. */
@@ -258,6 +269,21 @@ function paintSnowSide(g: Ctx) {
   }
 }
 
+
+function paintGeology(g: Ctx): void {
+  noiseTile(g, Tiles.Granite % ATLAS_COLS, Math.floor(Tiles.Granite / ATLAS_COLS), ['#aa8d80', '#c7ad9b', '#635b58'], 700);
+  noiseTile(g, Tiles.Basalt % ATLAS_COLS, Math.floor(Tiles.Basalt / ATLAS_COLS), ['#353a40', '#494d56', '#252a31'], 701);
+  noiseTile(g, Tiles.Gabbro % ATLAS_COLS, Math.floor(Tiles.Gabbro / ATLAS_COLS), ['#46483f', '#707068', '#292e2d'], 702);
+  noiseTile(g, Tiles.Gneiss % ATLAS_COLS, Math.floor(Tiles.Gneiss / ATLAS_COLS), ['#8c8185', '#b5a6a7', '#5b5963'], 703);
+  noiseTile(g, Tiles.Peridotite % ATLAS_COLS, Math.floor(Tiles.Peridotite / ATLAS_COLS), ['#657840', '#869c50', '#3e4e30'], 704);
+  noiseTile(g, Tiles.Wadsleyite % ATLAS_COLS, Math.floor(Tiles.Wadsleyite / ATLAS_COLS), ['#99833f', '#c3a855', '#796235'], 705);
+  noiseTile(g, Tiles.Ringwoodite % ATLAS_COLS, Math.floor(Tiles.Ringwoodite / ATLAS_COLS), ['#476578', '#728fa5', '#314f62'], 706);
+  noiseTile(g, Tiles.Bridgmanite % ATLAS_COLS, Math.floor(Tiles.Bridgmanite / ATLAS_COLS), ['#816046', '#a77c50', '#5d4237'], 707);
+  noiseTile(g, Tiles.PostPerovskite % ATLAS_COLS, Math.floor(Tiles.PostPerovskite / ATLAS_COLS), ['#534051', '#836079', '#382e40'], 708);
+  noiseTile(g, Tiles.MoltenCore % ATLAS_COLS, Math.floor(Tiles.MoltenCore / ATLAS_COLS), ['#ed7e30', '#ffcb59', '#bb4125'], 709);
+  noiseTile(g, Tiles.IronNickel % ATLAS_COLS, Math.floor(Tiles.IronNickel / ATLAS_COLS), ['#b7a189', '#ddd0b0', '#847b75'], 710);
+}
+
 /** Água: azul com ondas horizontais sutis. */
 function paintWater(g: Ctx) {
   noiseTile(g, 4, 1, WATER_COLORS, 1301);
@@ -403,6 +429,7 @@ export function getAtlasTexture(): THREE.CanvasTexture {
   paintSandstone(g);
   paintGrassTuft(g);
   paintFlower(g);
+  paintGeology(g);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;

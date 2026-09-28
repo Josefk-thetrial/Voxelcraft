@@ -8,18 +8,21 @@
 import { useState } from 'react';
 import Menu from './components/Menu';
 import GameView from './components/GameView';
-import { clearSave, hasSave } from './game/save';
+import { hasSave } from './game/save';
+
+import { createWorldSettings, type WorldSettings } from './game/worldSettings';
 
 type Screen = 'menu' | 'game';
 
 export default function App() {
+  const [world, setWorld] = useState<WorldSettings>();
   const [screen, setScreen] = useState<Screen>('menu');
   const [autoload, setAutoload] = useState(false);
   const [gameMode, setGameMode] = useState<'survival' | 'creative'>('survival');
 
-  const startGame = (load: boolean, mode: 'survival' | 'creative' = 'survival') => {
+  const startGame = (load: boolean, mode: 'survival' | 'creative' = 'survival', seedText = '') => {
     if (!load && hasSave() && !window.confirm('Criar um novo mundo substituirá o mundo salvo. Deseja continuar?')) return;
-    if (!load) clearSave();
+    setWorld(load ? undefined : createWorldSettings(seedText));
     setAutoload(load);
     setGameMode(mode);
     setScreen('game');
@@ -28,6 +31,6 @@ export default function App() {
   return screen === 'menu' ? (
     <Menu onPlay={startGame} />
   ) : (
-    <GameView autoload={autoload} gameMode={gameMode} onExit={() => setScreen('menu')} />
+    <GameView world={world} autoload={autoload} gameMode={gameMode} onExit={() => setScreen('menu')} />
   );
 }

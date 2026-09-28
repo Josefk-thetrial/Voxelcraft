@@ -1,7 +1,10 @@
+import { EARTH_RADIUS, GEO_SEA_Y, BEDROCK_TOP_Y } from './geology';
+import { withVerticalRenderOrigin } from './renderOrigin';
 import { GRAPHICS, getGraphicsQuality } from './graphics';
 import * as THREE from 'three';
 import { ChunkManager } from './ChunkManager';
-import { SEA_LEVEL } from './chunk';
+import { TerrainGenerator } from './chunk';
+import { createWorldSettings, worldSettingsFromSave, type WorldSettings } from './worldSettings';
 import { Player, type MoveMode } from './Player';
 import { BLOCKS, BlockId, isReplaceable, isSolid } from './blocks';
 import {
@@ -24,10 +27,18 @@ import { readSave, writeSave, type SaveData } from './save';
 import { BIOME_NAMES, type Biome } from './biomes';
 import { createPlayerModel, animatePlayerModel, type PlayerModelParts } from './PlayerModel';
 
-const WORLD_SEED = 20260214;
+export interface GameOptions {
+  autoload?: boolean;
+  gameMode?: 'survival' | 'creative';
+  world?: WorldSettings;
+}
 
 export interface HudState {
   fps: number;
+  seed: number;
+  seedText: string;
+  generatorVersion: number;
+  geology: ReturnType<ChunkManager['geologicalInfo']>;
   x: number;
   y: number;
   z: number;
@@ -77,6 +88,7 @@ interface Cloud {
 }
 
 export class Game {
+  private readonly world: WorldSettings;
   private container: HTMLDivElement;
   private cb: GameCallbacks;
 
@@ -130,13 +142,18 @@ export class Game {
   private currentFps = 0;
   private hudElapsed = 0;
 
-  constructor(container: HTMLDivElement, cb: GameCallbacks, options?: Record<string, unknown>) {
+  constructor(container: HTMLDivElement, cb: GameCallbacks, options: GameOptions = {}) {
     this.container = container;
     this.cb = cb;
+    const saved = options.autoload ? readSave() : null;
+    if (options.autoload && !saved) throw new Error('Não foi possível ler este save ou a versão do gerador não é suportada. O arquivo salvo foi preservado.');
+    this.world = saved ? worldSettingsFromSave(saved) : options.world ?? createWorldSettings();
+    // Resolve the seed/version and spawn BEFORE constructing any chunks/GPU resources.
+    const initial = saved ? saved.player : new TerrainGenerator(this.world.seed, this.world.generatorVersion).findSpawn();
 
     this.initRenderer();
     this.initScene();
-    this.initWorld();
+    this.initWorld(saved, initial);
     this.initSelectionOutline();
     this.initHand();
     this.initClouds();
@@ -145,8 +162,8 @@ export class Game {
     this.mobs = new MobManager(this.scene);
     this.initPlayerModel();
 
-    if (options?.autoload) {
-      this.applySave(readSave());
+    if (saved) {
+      this.applySave(saved, true);
     } else if (options?.gameMode) {
       this.gameMode = options.gameMode as 'survival' | 'creative';
     }
@@ -175,12 +192,13 @@ export class Game {
     this.torchLighting = new TorchLighting(this.scene);
   }
 
-  private initWorld(): void {
-    this.chunks = new ChunkManager(this.scene, WORLD_SEED, this.graphics.radius);
-    this.chunks.forceSpawnArea();
-    const groundY = this.chunks.supportHeightAt(0.5, 0.5);
-    this.player.position.set(0.5, groundY > 0 ? groundY : SEA_LEVEL + 6, 0.5);
-    this.player.grounded = true;
+  private initWorld(saved: SaveData | null, initial: { x: number; z: number }): void {
+    this.chunks = new ChunkManager(this.scene, this.world.seed, this.graphics.radius, this.world.generatorVersion);
+    if (saved) this.chunks.applyEdits(saved.edits);
+    this.chunks.forceSpawnArea(initial.x, initial.z, saved?.player.y ?? this.chunks.supportHeightAt(initial.x, initial.z));
+    if (saved) this.player.position.set(saved.player.x, saved.player.y, saved.player.z);
+    else this.player.position.copy(this.chunks.safeSpawnNear(initial.x, initial.z));
+    this.player.grounded = !saved;
     this.spawn.copy(this.player.position);
   }
 
@@ -267,8 +285,8 @@ export class Game {
       d.mesh.position.addScaledVector(d.vel, dt);
       d.mesh.rotation.y += dt * 2;
 
-      const gy = this.chunks.supportHeightAt(d.mesh.position.x, d.mesh.position.z);
-      if (gy >= 0 && d.mesh.position.y < gy + 0.125) {
+      const gy = this.chunks.supportHeightAt(d.mesh.position.x, d.mesh.position.z, d.mesh.position.y);
+      if (Number.isFinite(gy) && d.mesh.position.y < gy + 0.125) {
         d.mesh.position.y = gy + 0.125;
         d.vel.set(d.vel.x * 0.5, 0, d.vel.z * 0.5);
       }
@@ -401,7 +419,10 @@ export class Game {
     const p = this.player.position;
     const data: SaveData = {
       version: 1,
-      seed: WORLD_SEED,
+      seed: this.world.seed,
+      seedText: this.world.seedText,
+      generatorVersion: this.world.generatorVersion,
+      spawn: { x: this.spawn.x, y: this.spawn.y, z: this.spawn.z },
       savedAt: Date.now(),
       player: {
         x: p.x,
@@ -422,9 +443,9 @@ export class Game {
     this.cb.onSaveResult(writeSave(data));
   }
 
-  private applySave(data: SaveData | null): void {
-    if (!data || data.seed !== WORLD_SEED) return;
-    this.chunks.applyEdits(data.edits);
+  private applySave(data: SaveData | null, editsAlreadyApplied = false): void {
+    if (!data || data.seed !== this.world.seed || (data.generatorVersion ?? 1) !== this.world.generatorVersion) return;
+    if (!editsAlreadyApplied) this.chunks.applyEdits(data.edits);
     this.player.setState(
       data.player.x,
       data.player.y,
@@ -446,7 +467,8 @@ export class Game {
         this.hotbarIds.push(DEFAULT_HOTBAR_IDS[this.hotbarIds.length] ?? DEFAULT_HOTBAR_IDS[0]);
       }
     }
-    this.spawn.set(data.player.x, data.player.y, data.player.z);
+    const spawn = data.spawn ?? data.player;
+    this.spawn.set(spawn.x, spawn.y, spawn.z);
     this.refreshHandGeo();
   }
 
@@ -509,7 +531,7 @@ export class Game {
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+    if (document.pointerLockElement === this.renderer.domElement && (e.code === 'Space' || e.code === 'Tab')) e.preventDefault();
     if (e.repeat) return;
 
     if (e.code === 'KeyE') {
@@ -634,7 +656,7 @@ export class Game {
     const frame = this.player.update(simDt, this.chunks);
     this.underwater = frame.underwater;
 
-    if (this.player.position.y < -40 && !this.survival.dead && this.gameMode === 'survival') {
+    if (this.player.position.y < (this.world.generatorVersion === 3 ? BEDROCK_TOP_Y - 40 : -40) && !this.survival.dead && this.gameMode === 'survival') {
       this.survival.health = 0;
     }
 
@@ -650,7 +672,7 @@ export class Game {
       document.exitPointerLock();
     }
 
-    this.chunks.update(this.player.position.x, this.player.position.z);
+    this.chunks.update(this.player.position.x, this.player.position.z, this.player.position.y);
 
     if (active) this.updateSelection();
     else this.selectionOutline.visible = false;
@@ -689,7 +711,8 @@ export class Game {
     }
 
     this.updateDrops(dt);
-    this.updateClouds(simDt);
+    this.cloudMesh.visible = this.player.position.y > -200;
+    if (this.cloudMesh.visible) this.updateClouds(simDt);
 
     const p = this.player.position;
 
@@ -789,18 +812,26 @@ export class Game {
     }
 
     const fog = this.scene.fog as THREE.Fog;
-    const submerged = this.chunks.getBlock(Math.floor(renderCam.position.x), Math.floor(renderCam.position.y), Math.floor(renderCam.position.z)) === BlockId.Water;
-    if (submerged) fog.color.set(0x17516e);
-    fog.near = submerged ? 0.5 : 34;
-    fog.far = submerged ? 16 : this.graphics.radius * 16 + 16;
-    this.renderer.render(this.scene, renderCam);
+    const cameraBlock = this.chunks.getBlock(Math.floor(renderCam.position.x), Math.floor(renderCam.position.y), Math.floor(renderCam.position.z));
+    const molten = cameraBlock === BlockId.MoltenCore;
+    const submerged = cameraBlock === BlockId.Water || molten;
+    if (submerged) fog.color.set(molten ? 0x9a431b : 0x17516e);
+    const surfaceFar = this.world.generatorVersion >= 2 ? this.graphics.radius * 16 - 4 : this.graphics.radius * 16 + 16;
+    fog.near = submerged ? 0.5 : Math.min(34, surfaceFar * 0.55);
+    fog.far = submerged ? molten ? 4 : 16 : surfaceFar;
+    withVerticalRenderOrigin(this.scene, renderCam, () => this.renderer.render(this.scene, renderCam));
   };
 
   private emitHud(): void {
     if (!this.chunks) return;
     const p = this.player.position;
+    const geology = this.chunks.geologicalInfo(p.x, p.y, p.z);
     this.cb.onHud({
       fps: this.currentFps,
+      seed: this.world.seed,
+      seedText: this.world.seedText,
+      generatorVersion: this.world.generatorVersion,
+      geology,
       x: Math.round(p.x * 10) / 10,
       y: Math.round(p.y * 10) / 10,
       z: Math.round(p.z * 10) / 10,
@@ -820,15 +851,34 @@ export class Game {
       dayPhase: this.dayNight.phase,
       grounded: this.player.grounded,
       crouching: this.player.crouching,
-      biome: BIOME_NAMES[this.chunks.biomeAt(p.x, p.z) as Biome] ?? '',
+      biome: geology && geology.depth > 1000 ? geology.layer : BIOME_NAMES[this.chunks.biomeAt(p.x, p.z) as Biome] ?? '',
       pigs: this.mobs.counts.pigs,
       zombies: this.mobs.counts.zombies,
       gameMode: this.gameMode,
     });
   }
 
+  /** Creative inspection shortcut, not a pre-generated shaft through Earth. */
+  travelToDepth(depth: number): boolean {
+    if (this.gameMode !== 'creative' || this.world.generatorVersion !== 3 || !Number.isFinite(depth)) return false;
+    depth = Math.round(Math.max(0, Math.min(EARTH_RADIUS, depth)));
+    const x = Math.floor(this.player.position.x), z = Math.floor(this.player.position.z);
+    const y = Math.max(BEDROCK_TOP_Y, GEO_SEA_Y - depth);
+    // A small observation chamber is explicitly recorded as normal save edits.
+    for (let dy = 0; dy < 4; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      this.chunks.setBlock(x + dx, y + dy, z + dz, BlockId.Air);
+    }
+    this.chunks.forceSpawnArea(x + .5, z + .5, y);
+    this.player.setState(x + .5, y, z + .5, this.player.yaw, 0, 'fly');
+    this.currentHit = null; this.selectionOutline.visible = false;
+    this.mouseLeft = this.mouseRight = false;
+    this.emitHud();
+    return true;
+  }
+
   respawn(): void {
     this.survival.reset();
+    if (this.world.generatorVersion === 3) this.chunks.forceSpawnArea(this.spawn.x, this.spawn.z, this.spawn.y);
     this.player.respawn(this.spawn.x, this.spawn.y + 2, this.spawn.z);
     this.mouseLeft = false;
     this.mouseRight = false;

@@ -46,6 +46,7 @@ export class DayNightCycle {
       depthWrite: false,
       fog: false,
       uniforms: {
+        horizonColor: { value: this.fog.color },
         topColor: { value: new THREE.Color(0x2f7fd0) },
         midColor: { value: new THREE.Color(0x8ec6ee) },
         botColor: { value: new THREE.Color(0xc8e0ef) },
@@ -59,13 +60,17 @@ export class DayNightCycle {
       `,
       fragmentShader: /* glsl */ `
         varying vec3 vDir;
-        uniform vec3 topColor, midColor, botColor;
+        uniform vec3 topColor, midColor, botColor, horizonColor;
         void main() {
           float h = normalize(vDir).y;
           vec3 color = h > 0.0
             ? mix(midColor, topColor, pow(smoothstep(0.0, 0.65, h), 0.8))
             : mix(midColor, botColor, smoothstep(0.0, 0.35, -h));
+          // Match distant terrain/water to the lower sky, hiding the streaming edge.
+          color = mix(horizonColor, color, smoothstep(0.0, 0.22, max(h, 0.0)));
           gl_FragColor = vec4(color, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
     });
@@ -132,10 +137,11 @@ export class DayNightCycle {
     uniforms.botColor.value.copy(nightBottom).lerp(dayBottom, day).lerp(dusk, horizon * 0.5);
     this.fog.color.copy(nightMid).lerp(new THREE.Color(0xc8e0ef), day).lerp(dusk, horizon * 0.24);
 
+    this.sky.visible = player.y > -100;
     this.sky.position.copy(player);
     this.stars.position.copy(player);
     (this.stars.material as THREE.PointsMaterial).opacity = Math.pow(1 - day, 1.6);
-    this.stars.visible = day < 0.92;
+    this.stars.visible = day < 0.92 && player.y > -100;
   }
 
   /** Fração do ciclo [0,1) — usada pelo sistema de save. */
