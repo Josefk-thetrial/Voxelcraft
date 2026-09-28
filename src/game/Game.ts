@@ -700,18 +700,12 @@ export class Game {
     const clampedPitch = Math.max(-1.05, Math.min(1.05, this.player.pitch));
     this.playerModel.head.rotation.x = -clampedPitch;
 
-    // Leve inclinação do torso ao agachar
-    this.playerModel.body.rotation.x = this.player.crouching ? 0.16 : 0;
-
-    animatePlayerModel(this.playerModel, walkSpeed, dt, this.walkPhase);
-
-    // Braço direito bate ao minerar/colocar também no F5
-    if (this.swingTimer > 0) {
-      const swingThird = Math.sin((1 - this.swingTimer / 0.25) * Math.PI) * 1.1;
-      // Sinal invertido: no espaço local do braço, negativo projeta o golpe à frente.
-      this.playerModel.armR.rotation.x -= swingThird;
-      this.playerModel.armL.rotation.x -= swingThird * 0.18;
-    }
+    animatePlayerModel(this.playerModel, walkSpeed, dt, this.walkPhase, {
+      grounded: this.player.grounded,
+      crouching: this.player.crouching,
+      flying: this.player.mode === 'fly',
+      attack: this.swingTimer > 0 ? Math.sin((1 - this.swingTimer / 0.25) * Math.PI) : 0,
+    });
     this.dayNight.update(simDt, p);
     this.torchLighting.update(dt, p, this.chunks);
 
@@ -863,6 +857,7 @@ export class Game {
     this.selectionOutline.geometry.dispose();
     (this.selectionOutline.material as THREE.Material).dispose();
     this.playerModel.texture.dispose();
+    this.playerModel.capeTexture?.dispose();
     this.handMat.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

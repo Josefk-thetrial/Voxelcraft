@@ -1,3 +1,5 @@
+import { decodePng, importPng } from './png';
+import { defaultCape, readCape, type CapeProfile } from './cape';
 /** Minecraft Java skin layout; all imported images are normalized to 64×64. */
 const LEGACY_KEY = 'voxelcraft-player-skin';
 const PROFILE_KEY = 'voxelcraft-skin-profile-v1';
@@ -6,11 +8,12 @@ export type SkinLayer = typeof SKIN_LAYERS[number];
 export type SkinModel = 'classic' | 'slim';
 export interface SkinProfile {
   dataUrl: string | null;
+  cape: CapeProfile;
   model: SkinModel;
   layers: Record<SkinLayer, boolean>;
 }
 export function defaultSkinProfile(): SkinProfile {
-  return { dataUrl: null, model: 'classic', layers: Object.fromEntries(SKIN_LAYERS.map(k => [k, true])) as SkinProfile['layers'] };
+  return { dataUrl: null, cape: defaultCape(), model: 'classic', layers: Object.fromEntries(SKIN_LAYERS.map(k => [k, true])) as SkinProfile['layers'] };
 }
 export function getSkinProfile(): SkinProfile {
   const fallback = defaultSkinProfile();
@@ -21,6 +24,7 @@ export function getSkinProfile(): SkinProfile {
     if (!saved || typeof saved !== 'object') return fallback;
     return {
       dataUrl: typeof saved.dataUrl === 'string' && saved.dataUrl.startsWith('data:image/png') ? saved.dataUrl : null,
+      cape: readCape(saved.cape),
       model: saved.model === 'slim' ? 'slim' : 'classic',
       layers: Object.fromEntries(SKIN_LAYERS.map(k => [k, typeof saved.layers?.[k] === 'boolean' ? saved.layers[k] : true])) as SkinProfile['layers'],
     };
@@ -70,21 +74,5 @@ export function normalizeSkin(image: HTMLImageElement): HTMLCanvasElement {
   }
   return canvas;
 }
-export function decodeSkin(src: string): Promise<HTMLCanvasElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => { try { resolve(normalizeSkin(image)); } catch (error) { reject(error); } };
-    image.onerror = () => reject(new Error('Não foi possível ler a imagem PNG.'));
-    image.src = src;
-  });
-}
-export async function importSkin(file: File): Promise<{ dataUrl: string; legacy: boolean }> {
-  if (file.size > 1024 * 1024) throw new Error('O arquivo deve ter no máximo 1 MB.');
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  if (![137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => bytes[i] === v)) throw new Error('Selecione um arquivo PNG válido.');
-  const view = new DataView(bytes.buffer);
-  if (bytes.length < 24 || !isSkinSize(view.getUint32(16), view.getUint32(20))) throw new Error('Use uma skin PNG de 64×64 ou 64×32 pixels.');
-  const url = URL.createObjectURL(file);
-  try { return { dataUrl: (await decodeSkin(url)).toDataURL('image/png'), legacy: view.getUint32(20) === 32 }; }
-  finally { URL.revokeObjectURL(url); }
-}
+export const decodeSkin = (src: string) => decodePng(src, normalizeSkin);
+export const importSkin = (file: File) => importPng(file, isSkinSize, normalizeSkin, 'Use uma skin PNG de 64×64 ou 64×32 pixels.');

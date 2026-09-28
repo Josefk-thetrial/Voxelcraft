@@ -26,9 +26,20 @@ No menu, abra **Skins — Personalizar personagem**:
 
 O armazenamento é local por navegador/origem, sem envio da imagem para servidores. Se estiver cheio ou bloqueado, a interface informa o erro e mantém o vestiário aberto. Antes de criar um novo mundo, agora há uma confirmação para proteger o save existente.
 
+## Capas e animações
+
+A seção **04 / Capa** do vestiário oferece **Brasa**, **Floresta** e **Estelar** (desenhos próprios), além de **Sem capa** e uma textura personalizada. Use **Frente / costas** para conferir. A orientação e o zoom da prévia são preservados ao editar a skin ou a capa.
+
+- Importação de PNG **64×32**, até 1 MB, no atlas de capa Java (cuboide de 10×16×1 pixels). Uma imagem de skin não substitui o atlas de capa.
+- Exportação da capa selecionada; **Remover capa importada** elimina o arquivo do rascunho. Salve para confirmar. Escolher **Sem capa** oculta sem apagar o arquivo personalizado.
+- Capa e skin têm configurações independentes; restaurar a skin padrão não remove a capa. Perfis antigos abrem sem capa. Cancelar/Escape não altera os dados salvos.
+- A capa fica presa ao tronco, com balanço amortecido e inclinação de acordo com velocidade, estado no ar e agachamento. É um acessório cosmético em terceira pessoa, não uma elytra, simulação de tecido ou item de voo.
+- O personagem tem transições suaves, balanço dos braços em repouso, passada proporcional à velocidade, poses de salto/voo/agachamento e golpe suavizado. A prévia permite testar caminhada, corrida, agachamento, pose no ar e voo; desmarque **Animar personagem** para voltar ao repouso.
+- As **seis camadas externas** continuam disponíveis e acompanham as animações. Desligar a jaqueta não desliga a capa.
+
 ### Limites desta etapa
 
-Compatibilidade com o formato de skins não significa paridade completa com Minecraft. Não foram implementados serviços de contas Mojang/Microsoft, sincronização online, Marketplace/skins geométricas Bedrock, capas, editor de pintura, texturas HD ou todas as mecânicas do Minecraft. O item em primeira pessoa mantém o comportamento anterior; a personalização é aplicada ao modelo do personagem. A skin padrão continua sendo o fallback procedural existente ou `/textures/skin.png`, caso fornecido.
+Compatibilidade com o formato de skins não significa paridade completa com Minecraft. Não foram implementados serviços de contas Mojang/Microsoft, sincronização online, Marketplace/skins geométricas Bedrock, capas oficiais vinculadas a contas, editor de pintura, texturas HD ou todas as mecânicas do Minecraft. O item em primeira pessoa mantém o comportamento anterior; a personalização é aplicada ao modelo do personagem. A skin padrão continua sendo o fallback procedural existente ou `/textures/skin.png`, caso fornecido.
 
 ## Verificar
 
@@ -42,4 +53,4 @@ npm audit
 
 Para usar um Chromium já instalado: `CHROMIUM_PATH=/caminho/do/chromium npm test`.
 
-Os 10 testes de navegador cobrem persistência/cancelamento, importação e exportação, dimensões inválidas, conversão legada, transparência, UVs e modelo slim, camadas, liberação de textura, migração, falha de armazenamento, proteção de saves, layout estreito e inicialização dos dois modos de jogo. Não substituem um teste manual completo de gameplay.
+Os 15 testes de navegador cobrem persistência/cancelamento, importação e exportação, dimensões inválidas, conversão legada, transparência, UVs e modelo slim, camadas, liberação de textura, migração, falha de armazenamento, proteção de saves, layout estreito e inicialização dos dois modos de jogo, além de importação/exportação de capas, persistência independente, recursos GPU e transições de animação. Não substituem um teste manual completo de gameplay.

@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { decodeSkin, getSkinProfile, type SkinProfile, type SkinLayer } from './skin';
 
+import { capeDataUrl, decodeCape } from './cape';
+
 const SKIN_PATH = '/textures/skin.png';
 
 export function loadSkinTexture(profile: SkinProfile): THREE.CanvasTexture {
@@ -43,15 +45,15 @@ export function loadSkinTexture(profile: SkinProfile): THREE.CanvasTexture {
  * tx, ty: início da região na skin.
  * w, h, d: largura, altura, profundidade do membro.
  */
-export function mapSkinUVs(geo: THREE.BoxGeometry, tx: number, ty: number, w: number, h: number, d: number): void {
+export function mapSkinUVs(geo: THREE.BoxGeometry, tx: number, ty: number, w: number, h: number, d: number, atlasHeight = 64): void {
   const uv = geo.attributes.uv;
   const S = 64;
 
   const setFace = (idx: number, x: number, y: number, sw: number, sh: number) => {
     const u0 = x / S;
     const u1 = (x + sw) / S;
-    const v0 = 1 - y / S;
-    const v1 = 1 - (y + sh) / S;
+    const v0 = 1 - y / atlasHeight;
+    const v1 = 1 - (y + sh) / atlasHeight;
     const offset = idx * 4;
 
     // BoxGeometry already orders side vertices left-to-right as viewed
@@ -80,6 +82,9 @@ export interface PlayerModelParts {
   legR: THREE.Mesh;
   legL: THREE.Mesh;
   texture: THREE.CanvasTexture;
+  cape: THREE.Mesh | null;
+  capeTexture: THREE.CanvasTexture | null;
+  animation: { time: number; speed: number };
 }
 
 export function createPlayerModel(profile = getSkinProfile()): PlayerModelParts {
@@ -136,17 +141,76 @@ export function createPlayerModel(profile = getSkinProfile()): PlayerModelParts 
   outer(legR, 'rightPants', 0, 32, 4, 12, 4, -0.375, 0.015625);
   outer(legL, 'leftPants', 0, 48, 4, 12, 4, -0.375, 0.015625);
   group.add(head, body, armR, armL, legR, legL);
-  return { group, head, body, armR, armL, legR, legL, texture: tex };
+  let cape: THREE.Mesh | null = null;
+  let capeTexture: THREE.CanvasTexture | null = null;
+  const capeUrl = profile.cape && capeDataUrl(profile.cape);
+  if (capeUrl) {
+    const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 32;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = texture.minFilter = THREE.NearestFilter;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    let disposed = false;
+    texture.addEventListener('dispose', () => { disposed = true; });
+    void decodeCape(capeUrl).then(image => {
+      if (disposed) return;
+      canvas.getContext('2d')!.drawImage(image, 0, 0); texture.needsUpdate = true;
+    }).catch(() => { /* Invalid legacy storage leaves the cape transparent. */ });
+    const geo = new THREE.BoxGeometry(10 / 16, 1, 1 / 16);
+    mapSkinUVs(geo, 0, 0, 10, 16, 1, 32);
+    geo.translate(0, -0.5, 0);
+    cape = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: texture, alphaTest: 0.1 }));
+    cape.name = 'cape';
+    cape.position.set(0, 0.375, -0.19);
+    cape.rotation.x = 0.1;
+    cape.castShadow = cape.receiveShadow = true;
+    body.add(cape);
+    capeTexture = texture;
+  }
+  return { group, head, body, armR, armL, legR, legL, texture: tex, cape, capeTexture, animation: { time: 0, speed: 0 } };
 }
 
-export function animatePlayerModel(parts: PlayerModelParts, walkSpeed: number, dt: number, phase: { value: number }): void {
-  // Ritmo mais lento e amplitude mais natural
-  if (walkSpeed > 0.01) phase.value += walkSpeed * dt * 2.8;
-  const swing = walkSpeed > 0.01 ? Math.sin(phase.value) * 0.45 : 0;
-  parts.armR.rotation.x = swing;
-  parts.armL.rotation.x = -swing;
-  parts.legR.rotation.x = -swing;
-  parts.legL.rotation.x = swing;
+export interface PlayerAnimationState {
+  grounded?: boolean;
+  crouching?: boolean;
+  flying?: boolean;
+  /** Normalized strike envelope, 0 at rest and 1 at full extension. */
+  attack?: number;
+}
+
+export function animatePlayerModel(parts: PlayerModelParts, walkSpeed: number, dt: number, phase: { value: number }, state: PlayerAnimationState = {}): void {
+  // Exponential damping is independent of frame rate. Clamp long frames and
+  // teleport-derived speeds so resuming a tab cannot fling limbs or the cape.
+  dt = THREE.MathUtils.clamp(dt, 0, 0.1);
+  const blend = 1 - Math.exp(-12 * dt);
+  const damp = (current: number, target: number) => THREE.MathUtils.lerp(current, target, blend);
+  const grounded = state.grounded ?? true;
+  const flying = state.flying ?? false;
+  const crouching = state.crouching ?? false;
+  const anim = parts.animation;
+  anim.time += dt;
+  anim.speed = damp(anim.speed, THREE.MathUtils.clamp(walkSpeed, 0, 10));
+  phase.value = (phase.value + anim.speed * dt * 2.8) % (Math.PI * 2);
+  const moving = Math.min(anim.speed / 3, 1);
+  const amplitude = (0.45 + Math.min(anim.speed / 8, 1) * 0.3) * moving;
+  const swing = Math.sin(phase.value) * amplitude * (crouching ? 0.5 : 1) * (grounded && !flying ? 1 : 0.15);
+  const idle = Math.sin(anim.time * 1.7) * 0.025;
+  const attack = THREE.MathUtils.clamp(state.attack ?? 0, 0, 1);
+  const air = flying ? -0.2 : grounded ? 0 : -0.35;
+  parts.armR.rotation.x = damp(parts.armR.rotation.x, swing + idle + air - attack * 1.3);
+  parts.armL.rotation.x = damp(parts.armL.rotation.x, -swing - idle + air - attack * 0.18);
+  parts.armR.rotation.z = damp(parts.armR.rotation.z, -0.035 - Math.cos(anim.time * 1.7) * 0.015);
+  parts.armL.rotation.z = damp(parts.armL.rotation.z, 0.035 + Math.cos(anim.time * 1.7) * 0.015);
+  parts.legR.rotation.x = damp(parts.legR.rotation.x, -swing + (grounded ? 0 : 0.25));
+  parts.legL.rotation.x = damp(parts.legL.rotation.x, swing + (grounded ? 0 : -0.15));
+  parts.body.rotation.x = damp(parts.body.rotation.x, crouching ? 0.28 : flying ? 0.12 : moving * 0.025);
+  parts.body.position.y = 1.125 + Math.sin(anim.time * 1.7) * 0.003;
+  parts.head.position.z = damp(parts.head.position.z, crouching ? 0.1 : 0);
+  if (parts.cape) {
+    const flutter = Math.sin(anim.time * 6 + phase.value) * 0.025 * moving;
+    const lift = 0.1 + Math.min(anim.speed / 10, 1) * 0.65 + (grounded ? 0 : 0.15) + (crouching ? 0.12 : 0);
+    parts.cape.rotation.x = damp(parts.cape.rotation.x, lift + flutter);
+    parts.cape.rotation.z = damp(parts.cape.rotation.z, Math.sin(anim.time * 2.4) * 0.025 * moving);
+  }
 }
 
 /** Release unique GPU resources, including the shared skin texture. */
@@ -160,4 +224,5 @@ export function disposePlayerModel(parts: PlayerModelParts): void {
   });
   materials.forEach(m => m.dispose());
   parts.texture.dispose();
+  parts.capeTexture?.dispose();
 }

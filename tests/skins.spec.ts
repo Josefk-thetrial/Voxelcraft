@@ -23,7 +23,7 @@ test('saves model and layers; cancel and Escape leave the saved profile unchange
 
 test('invalid files report errors, valid uploads can be exported', async ({ page }) => {
   await openWardrobe(page);
-  const file = page.locator('input[type=file]');
+  const file = page.getByLabel('Arquivo da skin');
   await file.setInputFiles({ name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not a PNG') });
   await expect(page.getByRole('status')).toContainText('PNG válido');
   const makePng = async (size: number) => Buffer.from(await page.evaluate(size => {
@@ -122,12 +122,13 @@ test('wardrobe fits a small viewport and exposes all controls', async ({ page })
 });
 
 for (const mode of ['Survival', 'Creative']) {
-  test(`${mode} still initializes the world with the saved slim skin`, async ({ page }) => {
+  test(`${mode} still initializes the world with the saved slim skin and cape`, async ({ page }) => {
     test.setTimeout(60000);
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await openWardrobe(page);
     await page.getByRole('radio', { name: /Slim/ }).check();
+    await page.getByLabel('Estilo da capa').selectOption('night');
     await page.getByRole('button', { name: 'Salvar e usar' }).click();
     await page.getByRole('button', { name: `Singleplayer — ${mode}` }).click();
     await expect(page.getByText('Clique para jogar')).toBeVisible({ timeout: 30000 });
