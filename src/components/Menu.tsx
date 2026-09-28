@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { hasSave } from '../game/save';
-import { clearStoredSkinDataUrl, setStoredSkinDataUrl } from '../game/skin';
+import SkinWardrobe from './SkinWardrobe';
 
 interface MenuProps {
   onPlay(loadExisting: boolean, mode: 'survival' | 'creative'): void;
@@ -39,30 +39,15 @@ const SPLASHES = [
 export default function Menu({ onPlay }: MenuProps) {
   const saved = hasSave();
   const [splash, setSplash] = useState('');
-  const skinInputRef = useRef<HTMLInputElement>(null);
+  const [wardrobeOpen, setWardrobeOpen] = useState(false);
 
   useEffect(() => {
     setSplash(SPLASHES[Math.floor(Math.random() * SPLASHES.length)]);
   }, []);
 
-  const onPickSkin = () => skinInputRef.current?.click();
-
-  const onSkinChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.includes('png')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setStoredSkinDataUrl(reader.result);
-        setSplash('Skin carregada!');
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   return (
     <div className="relative h-full w-full overflow-hidden bg-black select-none text-white">
+      {wardrobeOpen && <SkinWardrobe onClose={() => setWardrobeOpen(false)} />}
       {/* Panorama de fundo */}
       <img src="/images/panorama.jpg" alt="" className="mc-panorama" draggable={false} />
 
@@ -91,17 +76,7 @@ export default function Menu({ onPlay }: MenuProps) {
               Continue Saved World
             </button>
           )}
-          <div className="mc-btn-row">
-            <button onClick={onPickSkin} className="mc-menu-btn mc-menu-btn--half">Upload Skin</button>
-            <button onClick={() => { clearStoredSkinDataUrl(); setSplash('Skin limpa!'); }} className="mc-menu-btn mc-menu-btn--half">Reset Skin</button>
-          </div>
-          <input
-            ref={skinInputRef}
-            type="file"
-            accept="image/png"
-            className="hidden"
-            onChange={onSkinChange}
-          />
+          <button onClick={() => setWardrobeOpen(true)} className="mc-menu-btn">Skins — Personalizar personagem</button>
         </div>
 
         {/* RODAPÉ */}

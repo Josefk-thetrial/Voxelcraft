@@ -1,10 +1,10 @@
 // PlayerModel.ts — Modelo 3D com mapeamento UV real de skin Minecraft 64×64
 import * as THREE from 'three';
-import { getStoredSkinDataUrl } from './skin';
+import { decodeSkin, getSkinProfile, type SkinProfile, type SkinLayer } from './skin';
 
 const SKIN_PATH = '/textures/skin.png';
 
-function loadSkinTexture(): THREE.CanvasTexture {
+export function loadSkinTexture(profile: SkinProfile): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 64;
@@ -26,14 +26,14 @@ function loadSkinTexture(): THREE.CanvasTexture {
   tex.minFilter = THREE.NearestFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
 
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
+  let disposed = false;
+  tex.addEventListener('dispose', () => { disposed = true; });
+  void decodeSkin(profile.dataUrl ?? SKIN_PATH).then(image => {
+    if (disposed) return;
     ctx.clearRect(0, 0, 64, 64);
-    ctx.drawImage(img, 0, 0, 64, 64);
+    ctx.drawImage(image, 0, 0);
     tex.needsUpdate = true;
-  };
-  img.src = getStoredSkinDataUrl() ?? SKIN_PATH;
+  }).catch(() => { /* Keep the built-in skin for missing/invalid saved files. */ });
 
   return tex;
 }
@@ -43,7 +43,7 @@ function loadSkinTexture(): THREE.CanvasTexture {
  * tx, ty: início da região na skin.
  * w, h, d: largura, altura, profundidade do membro.
  */
-function mapSkinUVs(geo: THREE.BoxGeometry, tx: number, ty: number, w: number, h: number, d: number): void {
+export function mapSkinUVs(geo: THREE.BoxGeometry, tx: number, ty: number, w: number, h: number, d: number): void {
   const uv = geo.attributes.uv;
   const S = 64;
 
@@ -54,18 +54,12 @@ function mapSkinUVs(geo: THREE.BoxGeometry, tx: number, ty: number, w: number, h
     const v1 = 1 - (y + sh) / S;
     const offset = idx * 4;
 
-    // Ordem dos vértices nas faces do Three.js BoxGeometry
-    if (idx === 2 || idx === 3) { // Topo e Base
-      uv.setXY(offset,     u0, v0);
-      uv.setXY(offset + 1, u1, v0);
-      uv.setXY(offset + 2, u0, v1);
-      uv.setXY(offset + 3, u1, v1);
-    } else {
-      uv.setXY(offset,     u1, v0);
-      uv.setXY(offset + 1, u0, v0);
-      uv.setXY(offset + 2, u1, v1);
-      uv.setXY(offset + 3, u0, v1);
-    }
+    // BoxGeometry already orders side vertices left-to-right as viewed
+    // from outside. Bottom unfolds in the opposite vertical direction.
+    uv.setXY(offset, u0, idx === 3 ? v1 : v0);
+    uv.setXY(offset + 1, u1, idx === 3 ? v1 : v0);
+    uv.setXY(offset + 2, u0, idx === 3 ? v0 : v1);
+    uv.setXY(offset + 3, u1, idx === 3 ? v0 : v1);
   };
 
   // 0:+X(Dir), 1:-X(Esq), 2:+Y(Top), 3:-Y(Base), 4:+Z(Frente), 5:-Z(Tras)
@@ -85,11 +79,12 @@ export interface PlayerModelParts {
   armL: THREE.Mesh;
   legR: THREE.Mesh;
   legL: THREE.Mesh;
+  texture: THREE.CanvasTexture;
 }
 
-export function createPlayerModel(): PlayerModelParts {
-  const tex = loadSkinTexture();
-  const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.1, transparent: true });
+export function createPlayerModel(profile = getSkinProfile()): PlayerModelParts {
+  const tex = loadSkinTexture(profile);
+  const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.1 });
   const group = new THREE.Group();
 
   const skinBox = (w: number, h: number, d: number, tx: number, ty: number, bw: number, bh: number, bd: number): THREE.Mesh => {
@@ -106,20 +101,18 @@ export function createPlayerModel(): PlayerModelParts {
   head.geometry.translate(0, 0.25, 0);
   head.position.y = 1.5;
 
-  // Camada externa da cabeça (hat/helmet layer) DESATIVADA por padrão.
-  // Motivo: muitas skins usam essa camada como capuz/máscara e ela estava
-  // cobrindo o rosto, parecendo bug. Se quiser, podemos reativar depois com toggle.
-
   const body = skinBox(8, 12, 4, 16, 16, 0.5, 0.75, 0.25);
   body.position.y = 1.125;
 
-  const armR = skinBox(4, 12, 4, 40, 16, 0.25, 0.75, 0.25);
+  const armWidth = profile.model === 'slim' ? 3 : 4;
+  const armSize = armWidth / 16;
+  const armR = skinBox(armWidth, 12, 4, 40, 16, armSize, 0.75, 0.25);
   armR.geometry.translate(0, -0.375, 0);
-  armR.position.set(-0.375, 1.5, 0);
+  armR.position.set(-0.25 - armSize / 2, 1.5, 0);
 
-  const armL = skinBox(4, 12, 4, 32, 48, 0.25, 0.75, 0.25);
+  const armL = skinBox(armWidth, 12, 4, 32, 48, armSize, 0.75, 0.25);
   armL.geometry.translate(0, -0.375, 0);
-  armL.position.set(0.375, 1.5, 0);
+  armL.position.set(0.25 + armSize / 2, 1.5, 0);
 
   const legR = skinBox(4, 12, 4, 0, 16, 0.25, 0.75, 0.25);
   legR.geometry.translate(0, -0.375, 0);
@@ -129,8 +122,21 @@ export function createPlayerModel(): PlayerModelParts {
   legL.geometry.translate(0, -0.375, 0);
   legL.position.set(0.125, 0.75, 0);
 
+  const outer = (parent: THREE.Mesh, layer: SkinLayer, tx: number, ty: number, w: number, h: number, d: number, centerY: number, inflate: number) => {
+    const mesh = skinBox(w, h, d, tx, ty, w / 16 + inflate * 2, h / 16 + inflate * 2, d / 16 + inflate * 2);
+    mesh.position.y = centerY;
+    mesh.visible = profile.layers[layer];
+    mesh.name = layer;
+    parent.add(mesh);
+  };
+  outer(head, 'hat', 32, 0, 8, 8, 8, 0.25, 0.03125);
+  outer(body, 'jacket', 16, 32, 8, 12, 4, 0, 0.015625);
+  outer(armR, 'rightSleeve', 40, 32, armWidth, 12, 4, -0.375, 0.015625);
+  outer(armL, 'leftSleeve', 48, 48, armWidth, 12, 4, -0.375, 0.015625);
+  outer(legR, 'rightPants', 0, 32, 4, 12, 4, -0.375, 0.015625);
+  outer(legL, 'leftPants', 0, 48, 4, 12, 4, -0.375, 0.015625);
   group.add(head, body, armR, armL, legR, legL);
-  return { group, head, body, armR, armL, legR, legL };
+  return { group, head, body, armR, armL, legR, legL, texture: tex };
 }
 
 export function animatePlayerModel(parts: PlayerModelParts, walkSpeed: number, dt: number, phase: { value: number }): void {
@@ -141,4 +147,17 @@ export function animatePlayerModel(parts: PlayerModelParts, walkSpeed: number, d
   parts.armL.rotation.x = -swing;
   parts.legR.rotation.x = -swing;
   parts.legL.rotation.x = swing;
+}
+
+/** Release unique GPU resources, including the shared skin texture. */
+export function disposePlayerModel(parts: PlayerModelParts): void {
+  const materials = new Set<THREE.Material>();
+  parts.group.traverse(obj => {
+    if (obj instanceof THREE.Mesh) {
+      obj.geometry.dispose();
+      (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => materials.add(m));
+    }
+  });
+  materials.forEach(m => m.dispose());
+  parts.texture.dispose();
 }

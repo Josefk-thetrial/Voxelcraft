@@ -862,6 +862,7 @@ export class Game {
 
     this.selectionOutline.geometry.dispose();
     (this.selectionOutline.material as THREE.Material).dispose();
+    this.playerModel.texture.dispose();
     this.handMat.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

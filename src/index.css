@@ -826,3 +826,34 @@ body,
 .fade-up {
   animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* Skin wardrobe: independent modal, preserving the main menu/game HUD. */
+.skin-dialog { margin: auto; width: min(900px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 0; color: #edf3e8; background: #1c241d; border: 2px solid #64745b; box-shadow: 0 20px 100px #000b; }
+.skin-dialog::backdrop { background: #050b08bb; backdrop-filter: blur(6px); }
+.skin-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 26px; border-bottom: 1px solid #ffffff20; }
+.skin-eyebrow { font-size: 11px; letter-spacing: 3px; color: #b4df83; }
+.skin-header h2 { margin: 4px 0 0; font-size: 26px; font-weight: 700; }
+.skin-close { font-size: 32px; padding: 0 10px; cursor: pointer; }
+.skin-layout { display: grid; grid-template-columns: 0.9fr 1.1fr; }
+.skin-stage { text-align: center; padding: 12px 18px 20px; background: radial-gradient(ellipse at center, #40563b, #17251e); }
+.skin-preview { height: 350px; width: 100%; touch-action: none; cursor: grab; }
+.skin-preview canvas { display: block; }
+.skin-stage p, .skin-options p { color: #b5c2b1; font-size: 13px; line-height: 1.5; margin: 8px 0 14px; }
+.skin-options { padding: 22px 26px; }
+.skin-options h3, .skin-options legend { font-size: 14px; font-weight: 700; color: #d3e8c0; margin-bottom: 10px; }
+.skin-options fieldset { border: 0; padding: 0; margin-top: 20px; }
+.skin-models { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.skin-models label { padding: 10px; border: 1px solid #ffffff30; cursor: pointer; }
+.skin-models label:has(input:checked) { border-color: #a2d873; background: #a2d87316; }
+.skin-models small { display: block; font-size: 11px; color: #b5c2b1; margin: 4px 0 0 20px; }
+.skin-layers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px; }
+.skin-dialog input { accent-color: #9ed96b; margin-right: 8px; }
+.skin-dialog button:focus-visible, .skin-dialog a:focus-visible, .skin-dialog input:focus-visible { outline: 2px solid #dbffa8; outline-offset: 4px; }
+.skin-dialog .mc-menu-btn { width: 100%; height: auto; min-height: 40px; font-size: 14px; padding: 10px 14px; }
+.skin-dialog button:disabled { opacity: 0.5; cursor: wait; }
+.skin-actions { display: flex; gap: 14px; align-items: center; }
+.skin-text-btn { font-size: 12px; text-decoration: underline; color: #c5dfb2; padding: 10px 0; cursor: pointer; }
+.skin-footer { padding: 16px 26px; border-top: 1px solid #ffffff20; }
+.skin-footer p { font-size: 13px; color: #d3e8c0; min-height: 20px; margin-bottom: 12px; }
+.skin-dialog .skin-save { background: #4b7736; }
+@media (max-width: 640px) { .skin-layout { grid-template-columns: 1fr; } .skin-preview { height: 240px; } .skin-header, .skin-options, .skin-footer { padding: 16px; } }

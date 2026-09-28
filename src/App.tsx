@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import Menu from './components/Menu';
 import GameView from './components/GameView';
-import { clearSave } from './game/save';
+import { clearSave, hasSave } from './game/save';
 
 type Screen = 'menu' | 'game';
 
@@ -18,6 +18,7 @@ export default function App() {
   const [gameMode, setGameMode] = useState<'survival' | 'creative'>('survival');
 
   const startGame = (load: boolean, mode: 'survival' | 'creative' = 'survival') => {
+    if (!load && hasSave() && !window.confirm('Criar um novo mundo substituirá o mundo salvo. Deseja continuar?')) return;
     if (!load) clearSave();
     setAutoload(load);
     setGameMode(mode);
